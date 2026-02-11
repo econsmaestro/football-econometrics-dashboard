@@ -67,7 +67,7 @@ try:
             stat_type="standard",
         )
 
-    st.table(league_data)
+    st.table(league_data.set_index("rk"))
 
 except requests.exceptions.HTTPError:
     st.error(f"Could not fetch data for the {season - 1}-{season} season. The page may not be available.")
