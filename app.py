@@ -291,7 +291,9 @@ def load_alltime_gk_penalties():
         Faced=("Faced", "sum"),
         Saved=("Saved", "sum"),
     ).reset_index()
-    clubs_list = per_club.groupby("Goalkeeper")["Club"].apply(lambda x: ", ".join(sorted(x.unique()))).reset_index()
+    clubs_list = per_club.groupby("Goalkeeper")["Club"].apply(
+        lambda x: ", ".join(sorted(c for c in x.unique() if c))
+    ).reset_index()
     clubs_list.columns = ["Goalkeeper", "Clubs"]
 
     agg = all_gks.groupby("Goalkeeper").agg(
@@ -304,6 +306,8 @@ def load_alltime_gk_penalties():
     agg = agg.merge(clubs_list, on="Goalkeeper", how="left")
     agg["Save %"] = (agg["Saved"] / agg["Faced"] * 100).round(1)
     agg["Conceded"] = agg["Faced"] - agg["Saved"]
+    agg = agg[agg["Goalkeeper"].str.strip().astype(bool)]
+    agg = agg[agg["Faced"] > 0]
     agg = agg[["Goalkeeper", "Clubs", "Seasons", "First_Season", "Last_Season",
                "Faced", "Saved", "Conceded", "Save %"]]
     return agg
