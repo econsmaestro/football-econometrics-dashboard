@@ -11,23 +11,36 @@ from scipy import stats
 
 st.set_page_config(page_title="Football Econometrics Dashboard", layout="wide")
 
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def detect_current_season():
+    from datetime import date
+    today = date.today()
+    if today.month >= 8:
+        return today.year + 1
+    return today.year
+
+
+CURRENT_SEASON_END = detect_current_season()
+
 st.title("Football Econometrics Dashboard")
-st.caption("A reproducible econometrics study of what statistically matters for success in the Premier League (1992-93 to 2024-25)")
+st.caption(f"A reproducible econometrics study of what statistically matters for success in the Premier League (1992-93 to {CURRENT_SEASON_END - 1}-{str(CURRENT_SEASON_END)[2:]})")
 
 with st.sidebar:
     st.header("Controls")
+    all_seasons = list(range(1993, CURRENT_SEASON_END + 1))
     season = st.selectbox(
         "Season (end year)",
-        options=list(range(1993, 2026)),
-        index=32,
+        options=all_seasons,
+        index=len(all_seasons) - 1,
     )
     st.divider()
     st.subheader("Multi-Season Analysis")
     season_range = st.slider(
         "Season range for analysis",
         min_value=1993,
-        max_value=2025,
-        value=(1993, 2025),
+        max_value=CURRENT_SEASON_END,
+        value=(1993, CURRENT_SEASON_END),
     )
 
 
@@ -72,6 +85,7 @@ def fetch_season_data(season_end_year):
 
             for col in ["Pos", "Pld", "W", "D", "L", "GF", "GA", "GD", "Pts"]:
                 if col in df.columns:
+                    df[col] = df[col].astype(str).str.replace("\u2212", "-", regex=False)
                     df[col] = pd.to_numeric(df[col], errors="coerce")
 
             df = df.dropna(subset=["Pos"])
