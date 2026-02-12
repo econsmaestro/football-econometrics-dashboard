@@ -382,6 +382,123 @@ def scrape_penalty_goalkeepers(tm_slug, tm_code, season_id=None, is_cup=False):
     return pd.DataFrame(data)
 
 
+def _parse_scorers_page(soup):
+    table = soup.find("table", class_="items")
+    if not table:
+        tables = soup.find_all("table")
+        table = tables[1] if len(tables) >= 2 else None
+    if not table:
+        return []
+
+    tbody = table.find("tbody") or table
+    rows = tbody.find_all("tr")
+    data = []
+
+    def parse_int(s):
+        clean = s.replace("'", "").replace(",", "").replace(".", "").replace("\xa0", "").strip()
+        clean = clean.split("(")[0].strip()
+        return int(clean) if clean.isdigit() else 0
+
+    for row in rows:
+        cells = row.find_all(["td", "th"])
+        row_class = row.get("class", [])
+        if not ("odd" in row_class or "even" in row_class):
+            continue
+        if len(cells) < 10:
+            continue
+
+        player_td = row.find("td", class_="hauptlink")
+        player_name = player_td.text.strip() if player_td else ""
+        if not player_name:
+            for c in cells:
+                hl = c.find(class_="hauptlink")
+                if hl:
+                    player_name = hl.text.strip()
+                    break
+
+        position = cells[4].text.strip() if len(cells) > 4 else ""
+
+        club = ""
+        if len(cells) > 7:
+            club_img = cells[7].find("img")
+            if club_img:
+                club = club_img.get("alt", "") or club_img.get("title", "")
+        if not club:
+            for img in row.find_all("img"):
+                alt = img.get("alt", "")
+                if alt and len(alt) > 2 and alt != player_name and "flag" not in alt.lower():
+                    parent = img.find_parent("td")
+                    parent_cls = parent.get("class", []) if parent else []
+                    if "hauptlink" not in parent_cls:
+                        club = alt
+                        break
+
+        appearances = parse_int(cells[8].text) if len(cells) > 8 else 0
+        assists = parse_int(cells[9].text) if len(cells) > 9 else 0
+        pen_goals = parse_int(cells[10].text) if len(cells) > 10 else 0
+
+        goals_cell = row.find("td", class_=lambda c: c and "hauptlink" in c and "zentriert" in c)
+        goals = 0
+        if goals_cell:
+            goals = parse_int(goals_cell.text)
+        if goals == 0 and len(cells) > 14:
+            goals = parse_int(cells[14].text)
+        if goals == 0:
+            goals = parse_int(cells[-1].text)
+
+        if player_name and goals > 0:
+            data.append({
+                "Player": player_name,
+                "Position": position,
+                "Club": club,
+                "Appearances": appearances,
+                "Goals": goals,
+                "Pen. Goals": pen_goals,
+                "Open Play Goals": max(0, goals - pen_goals),
+                "Assists": assists,
+            })
+    return data
+
+
+@st.cache_data(ttl=604800, show_spinner=False)
+def scrape_top_scorers(tm_slug, tm_code, season_id, is_cup=False):
+    wb = "pokalwettbewerb" if is_cup else "wettbewerb"
+    base_url = f"https://www.transfermarkt.us/{tm_slug}/torschuetzenliste/{wb}/{tm_code}/saison_id/{season_id}/altersklasse/alle/detailpos//plus/1"
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/120.0.0.0 Safari/537.36"
+        )
+    }
+    all_data = []
+    for page in range(1, 15):
+        page_url = base_url if page == 1 else f"{base_url}/page/{page}"
+        try:
+            response = requests.get(page_url, headers=headers, timeout=30)
+            response.raise_for_status()
+        except Exception:
+            break
+        soup = BeautifulSoup(response.text, "html.parser")
+        page_data = _parse_scorers_page(soup)
+        if not page_data:
+            break
+        all_data.extend(page_data)
+        pager = soup.find("div", class_="pager")
+        if not pager:
+            break
+        next_link = pager.find("li", class_="tm-pagination__list-item--icon-next-page")
+        if not next_link or not next_link.find("a"):
+            last_links = [a for a in pager.find_all("a") if f"page/{page + 1}" in a.get("href", "")]
+            if not last_links:
+                break
+
+    df = pd.DataFrame(all_data)
+    if not df.empty:
+        df = df.sort_values("Goals", ascending=False).reset_index(drop=True)
+    return df
+
+
 @st.cache_data(ttl=604800, show_spinner=False)
 def load_multi_season_penalties(start_year, end_year, tm_slug, tm_code, has_gk_data, season_type, is_cup=False):
     taker_frames = []
@@ -1801,6 +1918,176 @@ try:
                     kpi6.metric("Worst Finish", f"{worst_pos}")
                     kpi7.metric("Avg. GF/Season", f"{avg_gf:.1f}")
                     kpi8.metric("Avg. GA/Season", f"{avg_ga:.1f}")
+
+                    st.divider()
+                    st.markdown("### Goal Sources & Top Scorers")
+                    st.markdown(
+                        f"Who scores the goals for **{selected_team}** and how? "
+                        f"Breakdown of goal types for the **{latest_season}** season."
+                    )
+
+                    tm_season_id = int(season) - 1 if league_cfg["season_type"] == "split" else int(season)
+                    with st.spinner("Loading scorer data from Transfermarkt..."):
+                        scorers_df = scrape_top_scorers(
+                            league_cfg["tm_slug"], league_cfg["tm_code"],
+                            tm_season_id, is_cup=league_cfg["is_cup"]
+                        )
+
+                    if not scorers_df.empty:
+                        team_name_lower = selected_team.lower().replace(" fc", "").replace("fc ", "").strip()
+                        team_scorers = scorers_df[
+                            scorers_df["Club"].str.lower().str.contains(team_name_lower, na=False) |
+                            scorers_df["Club"].str.lower().apply(
+                                lambda x: team_name_lower.split()[0] in x if team_name_lower else False
+                            )
+                        ].copy()
+
+                        if team_scorers.empty:
+                            team_words = team_name_lower.split()
+                            for word in team_words:
+                                if len(word) > 3:
+                                    team_scorers = scorers_df[
+                                        scorers_df["Club"].str.lower().str.contains(word, na=False)
+                                    ].copy()
+                                    if not team_scorers.empty:
+                                        break
+
+                        if not team_scorers.empty:
+                            team_total_goals = team_scorers["Goals"].sum()
+                            team_pen_goals = team_scorers["Pen. Goals"].sum()
+                            team_open_play = team_scorers["Open Play Goals"].sum()
+                            top_scorer = team_scorers.iloc[0]
+
+                            gs1, gs2, gs3, gs4 = st.columns(4)
+                            gs1.metric("Total Goals (Scorers)", team_total_goals)
+                            gs2.metric("From Open Play", f"{team_open_play} ({team_open_play/max(1,team_total_goals)*100:.0f}%)")
+                            gs3.metric("From Penalties", f"{team_pen_goals} ({team_pen_goals/max(1,team_total_goals)*100:.0f}%)")
+                            gs4.metric("Top Scorer", f"{top_scorer['Player']} ({top_scorer['Goals']})")
+
+                            if len(team_scorers) > 1:
+                                top5 = team_scorers.head(8)
+                                fig_scorers = go.Figure()
+                                fig_scorers.add_trace(go.Bar(
+                                    y=top5["Player"], x=top5["Open Play Goals"],
+                                    name="Open Play", orientation="h",
+                                    marker_color="#2ecc71",
+                                ))
+                                fig_scorers.add_trace(go.Bar(
+                                    y=top5["Player"], x=top5["Pen. Goals"],
+                                    name="Penalties", orientation="h",
+                                    marker_color="#e74c3c",
+                                ))
+                                fig_scorers.update_layout(
+                                    title=f"{selected_team} Goal Scorers ({latest_season})",
+                                    xaxis_title="Goals", barmode="stack",
+                                    height=max(250, len(top5) * 40 + 100),
+                                    margin=dict(l=150, r=40, t=40, b=40),
+                                    yaxis=dict(autorange="reversed"),
+                                )
+                                st.plotly_chart(fig_scorers, use_container_width=True)
+
+                            goal_concentration = top_scorer["Goals"] / max(1, team_total_goals) * 100
+                            pen_reliance = team_pen_goals / max(1, team_total_goals) * 100
+                            n_scorers = len(team_scorers)
+
+                            insights = []
+                            if goal_concentration > 40:
+                                insights.append(
+                                    f"**High dependency on one player** — {top_scorer['Player']} scores "
+                                    f"{goal_concentration:.0f}% of all goals. If this player gets injured or "
+                                    f"loses form, the team's output could collapse. Developing alternative "
+                                    f"goal threats (a second striker, goals from midfield, or set-piece specialists) is critical."
+                                )
+                            elif goal_concentration < 20 and n_scorers >= 5:
+                                insights.append(
+                                    f"**Well-distributed goals** — {n_scorers} different scorers with no single "
+                                    f"player above {goal_concentration:.0f}%. This is a strength: the team isn't "
+                                    f"dependent on any one individual and is harder for opponents to game-plan against."
+                                )
+
+                            if pen_reliance > 20:
+                                insights.append(
+                                    f"**Heavy penalty reliance** — {pen_reliance:.0f}% of goals come from penalties "
+                                    f"({team_pen_goals} of {team_total_goals}). This is unsustainable and inflates "
+                                    f"the real attacking quality. Open-play goal creation (better crossing, through-balls, "
+                                    f"movement in the box) needs improvement to avoid points dropping when penalty decisions "
+                                    f"don't go the team's way."
+                                )
+                            elif pen_reliance < 5 and team_total_goals > 20:
+                                insights.append(
+                                    f"**Self-sufficient attack** — only {pen_reliance:.0f}% of goals from penalties. "
+                                    f"The vast majority of output comes from open play and set-piece routines, "
+                                    f"which is more reliable and sustainable long-term."
+                                )
+
+                            position_goals = {}
+                            for _, row_s in team_scorers.iterrows():
+                                pos = row_s["Position"]
+                                if not pos:
+                                    pos = "Unknown"
+                                pos_cat = "Forward"
+                                pos_lower = pos.lower()
+                                if any(w in pos_lower for w in ["back", "defender", "defence"]):
+                                    pos_cat = "Defender"
+                                elif any(w in pos_lower for w in ["midfield", "midfielder"]):
+                                    pos_cat = "Midfielder"
+                                elif any(w in pos_lower for w in ["keeper", "goal"]):
+                                    pos_cat = "Goalkeeper"
+                                elif any(w in pos_lower for w in ["forward", "striker", "winger", "wing", "attack"]):
+                                    pos_cat = "Forward"
+                                position_goals[pos_cat] = position_goals.get(pos_cat, 0) + row_s["Goals"]
+
+                            if position_goals and team_total_goals > 0:
+                                fig_pos_goals = go.Figure(data=[go.Pie(
+                                    labels=list(position_goals.keys()),
+                                    values=list(position_goals.values()),
+                                    hole=0.4,
+                                    marker_colors=["#2ecc71", "#3498db", "#e74c3c", "#f39c12"],
+                                )])
+                                fig_pos_goals.update_layout(
+                                    title="Goals by Position Group",
+                                    height=300, margin=dict(l=20, r=20, t=40, b=20),
+                                )
+                                st.plotly_chart(fig_pos_goals, use_container_width=True)
+
+                                fwd_pct = position_goals.get("Forward", 0) / team_total_goals * 100
+                                mid_pct = position_goals.get("Midfielder", 0) / team_total_goals * 100
+                                def_pct = position_goals.get("Defender", 0) / team_total_goals * 100
+
+                                if mid_pct > 30:
+                                    insights.append(
+                                        f"**Goals from midfield ({mid_pct:.0f}%)** — a sign of a well-functioning "
+                                        f"midfield unit that gets into scoring positions. Attacking midfielders and "
+                                        f"box-to-box runners are contributing beyond just creating chances."
+                                    )
+                                elif mid_pct < 10 and team_total_goals > 15:
+                                    insights.append(
+                                        f"**Midfield not chipping in ({mid_pct:.0f}% of goals)** — almost all goals "
+                                        f"come from forwards. Encouraging midfielders to arrive late in the box, take "
+                                        f"more shots from the edge of the area, or get on the end of set pieces "
+                                        f"would add a valuable extra dimension to the attack."
+                                    )
+
+                                if def_pct > 10:
+                                    insights.append(
+                                        f"**Defenders contributing goals ({def_pct:.0f}%)** — goals from centre-backs "
+                                        f"and full-backs (often from corners, free kicks, and overlapping runs) add a "
+                                        f"valuable source that opponents struggle to defend against."
+                                    )
+
+                            if insights:
+                                st.markdown("**Goal Source Analysis:**")
+                                for ins in insights:
+                                    st.markdown(f"- {ins}")
+
+                            st.markdown(f"**{selected_team} Scorers ({latest_season}):**")
+                            display_scorers = team_scorers[["Player", "Position", "Goals", "Pen. Goals", "Open Play Goals"]].copy()
+                            display_scorers.index = range(1, len(display_scorers) + 1)
+                            st.dataframe(display_scorers, use_container_width=True)
+                        else:
+                            st.info(f"Could not match {selected_team} in the scorer data. Team name matching between data sources may differ.")
+                    else:
+                        st.info(f"Top scorer data for the {latest_season} season could not be loaded from Transfermarkt.")
 
                     st.divider()
                     st.markdown("### Historical Trends")
