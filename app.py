@@ -14,29 +14,36 @@ from scipy import stats
 st.set_page_config(page_title="Football Econometrics Dashboard", layout="wide")
 
 LEAGUE_CONFIG = {
-    "Premier League": {"tm_slug": "premier-league", "tm_code": "GB1", "wiki_pattern": "split", "wiki_name": "Premier_League", "start_year": 1992, "teams": 20, "has_gk_data": True, "season_type": "split", "games_per_season": 38},
-    "La Liga": {"tm_slug": "laliga", "tm_code": "ES1", "wiki_pattern": "split", "wiki_name": "La_Liga", "start_year": 1992, "teams": 20, "has_gk_data": True, "season_type": "split", "games_per_season": 38},
-    "Ligue 1": {"tm_slug": "ligue-1", "tm_code": "FR1", "wiki_pattern": "split", "wiki_name": "Ligue_1", "start_year": 1992, "teams": 18, "has_gk_data": True, "season_type": "split", "games_per_season": 34},
-    "Bundesliga": {"tm_slug": "1-bundesliga", "tm_code": "L1", "wiki_pattern": "split", "wiki_name": "Bundesliga", "start_year": 1992, "teams": 18, "has_gk_data": True, "season_type": "split", "games_per_season": 34},
-    "Serie A": {"tm_slug": "serie-a", "tm_code": "IT1", "wiki_pattern": "split", "wiki_name": "Serie_A", "start_year": 1992, "teams": 20, "has_gk_data": True, "season_type": "split", "games_per_season": 38},
-    "Eredivisie": {"tm_slug": "eredivisie", "tm_code": "NL1", "wiki_pattern": "split", "wiki_name": "Eredivisie", "start_year": 1992, "teams": 18, "has_gk_data": True, "season_type": "split", "games_per_season": 34},
-    "Scottish Premiership": {"tm_slug": "scottish-premiership", "tm_code": "SC1", "wiki_pattern": "split", "wiki_name": "Scottish_Premiership", "start_year": 2013, "teams": 12, "has_gk_data": True, "season_type": "split", "games_per_season": 38},
-    "Champions League": {"tm_slug": "uefa-champions-league", "tm_code": "CL", "wiki_pattern": None, "wiki_name": None, "start_year": 1992, "teams": 0, "has_gk_data": True, "season_type": "split", "games_per_season": 0},
-    "Saudi Pro League": {"tm_slug": "saudi-pro-league", "tm_code": "SA1", "wiki_pattern": "split", "wiki_name": "Saudi_Pro_League", "start_year": 2008, "teams": 18, "has_gk_data": True, "season_type": "split", "games_per_season": 34},
-    "Indian Super League": {"tm_slug": "indian-super-league", "tm_code": "IND1", "wiki_pattern": "split", "wiki_name": "Indian_Super_League_season", "start_year": 2014, "teams": 12, "has_gk_data": True, "season_type": "split", "games_per_season": 22},
-    "MLS": {"tm_slug": "major-league-soccer", "tm_code": "MLS1", "wiki_pattern": "calendar", "wiki_name": "Major_League_Soccer_season", "start_year": 1996, "teams": 29, "has_gk_data": True, "season_type": "calendar", "games_per_season": 34},
-    "J1 League": {"tm_slug": "j1-league", "tm_code": "JAP1", "wiki_pattern": "calendar", "wiki_name": "J1_League", "start_year": 1993, "teams": 20, "has_gk_data": True, "season_type": "calendar", "games_per_season": 34},
-    "K League 1": {"tm_slug": "k-league-1", "tm_code": "RSK1", "wiki_pattern": "calendar", "wiki_name": "K_League_1", "start_year": 1983, "teams": 13, "has_gk_data": True, "season_type": "calendar", "games_per_season": 33},
-    "Singapore Premier League": {"tm_slug": "singapore-premier-league", "tm_code": "SIN1", "wiki_pattern": "calendar", "wiki_name": "Singapore_Premier_League", "start_year": 2009, "teams": 8, "has_gk_data": True, "season_type": "calendar", "games_per_season": 21},
-    "Argentine Primera División": {"tm_slug": "superliga", "tm_code": "AR1N", "wiki_pattern": "calendar", "wiki_name": "Argentine_Primera_División", "start_year": 2014, "teams": 28, "has_gk_data": False, "season_type": "calendar", "games_per_season": 27},
-    "Brasileirão Série A": {"tm_slug": "campeonato-brasileiro-serie-a", "tm_code": "BRA1", "wiki_pattern": "calendar", "wiki_name": "Campeonato_Brasileiro_Série_A", "start_year": 2003, "teams": 20, "has_gk_data": True, "season_type": "calendar", "games_per_season": 38},
-    "Liga BetPlay (Colombia)": {"tm_slug": "liga-betplay-dimayor", "tm_code": "COL1", "wiki_pattern": "calendar", "wiki_name": None, "start_year": 2014, "teams": 20, "has_gk_data": False, "season_type": "calendar", "games_per_season": 20},
-    "Chilean Primera División": {"tm_slug": "campeonato-nacional", "tm_code": "CLPD", "wiki_pattern": "calendar", "wiki_name": None, "start_year": 2014, "teams": 16, "has_gk_data": False, "season_type": "calendar", "games_per_season": 30},
-    "Uruguayan Primera División": {"tm_slug": "primera-division", "tm_code": "URU1", "wiki_pattern": "calendar", "wiki_name": None, "start_year": 2014, "teams": 16, "has_gk_data": False, "season_type": "calendar", "games_per_season": 30},
-    "Paraguayan Primera División": {"tm_slug": "division-de-honor", "tm_code": "PAR1", "wiki_pattern": "calendar", "wiki_name": None, "start_year": 2014, "teams": 12, "has_gk_data": False, "season_type": "calendar", "games_per_season": 22},
-    "Peruvian Liga 1": {"tm_slug": "liga-1", "tm_code": "PE1N", "wiki_pattern": "calendar", "wiki_name": None, "start_year": 2014, "teams": 19, "has_gk_data": False, "season_type": "calendar", "games_per_season": 34},
-    "Bolivian Primera División": {"tm_slug": "division-profesional", "tm_code": "BOL1", "wiki_pattern": "calendar", "wiki_name": None, "start_year": 2014, "teams": 16, "has_gk_data": False, "season_type": "calendar", "games_per_season": 30},
-    "Venezuelan Primera División": {"tm_slug": "primera-division", "tm_code": "VEN1", "wiki_pattern": "calendar", "wiki_name": None, "start_year": 2014, "teams": 18, "has_gk_data": False, "season_type": "calendar", "games_per_season": 34},
+    "Premier League": {"tm_slug": "premier-league", "tm_code": "GB1", "wiki_pattern": "split", "wiki_name": "Premier_League", "start_year": 1992, "teams": 20, "has_gk_data": True, "season_type": "split", "games_per_season": 38, "is_cup": False, "category": "Europe"},
+    "La Liga": {"tm_slug": "laliga", "tm_code": "ES1", "wiki_pattern": "split", "wiki_name": "La_Liga", "start_year": 1992, "teams": 20, "has_gk_data": True, "season_type": "split", "games_per_season": 38, "is_cup": False, "category": "Europe"},
+    "Ligue 1": {"tm_slug": "ligue-1", "tm_code": "FR1", "wiki_pattern": "split", "wiki_name": "Ligue_1", "start_year": 1992, "teams": 18, "has_gk_data": True, "season_type": "split", "games_per_season": 34, "is_cup": False, "category": "Europe"},
+    "Bundesliga": {"tm_slug": "1-bundesliga", "tm_code": "L1", "wiki_pattern": "split", "wiki_name": "Bundesliga", "start_year": 1992, "teams": 18, "has_gk_data": True, "season_type": "split", "games_per_season": 34, "is_cup": False, "category": "Europe"},
+    "Serie A": {"tm_slug": "serie-a", "tm_code": "IT1", "wiki_pattern": "split", "wiki_name": "Serie_A", "start_year": 1992, "teams": 20, "has_gk_data": True, "season_type": "split", "games_per_season": 38, "is_cup": False, "category": "Europe"},
+    "Eredivisie": {"tm_slug": "eredivisie", "tm_code": "NL1", "wiki_pattern": "split", "wiki_name": "Eredivisie", "start_year": 1992, "teams": 18, "has_gk_data": True, "season_type": "split", "games_per_season": 34, "is_cup": False, "category": "Europe"},
+    "Scottish Premiership": {"tm_slug": "scottish-premiership", "tm_code": "SC1", "wiki_pattern": "split", "wiki_name": "Scottish_Premiership", "start_year": 2013, "teams": 12, "has_gk_data": True, "season_type": "split", "games_per_season": 38, "is_cup": False, "category": "Europe"},
+    "Champions League": {"tm_slug": "uefa-champions-league", "tm_code": "CL", "wiki_pattern": None, "wiki_name": None, "start_year": 1992, "teams": 0, "has_gk_data": True, "season_type": "split", "games_per_season": 0, "is_cup": True, "category": "UEFA Competitions"},
+    "Europa League": {"tm_slug": "europa-league", "tm_code": "EL", "wiki_pattern": None, "wiki_name": None, "start_year": 2009, "teams": 0, "has_gk_data": True, "season_type": "split", "games_per_season": 0, "is_cup": True, "category": "UEFA Competitions"},
+    "Conference League": {"tm_slug": "uefa-europa-conference-league", "tm_code": "UCOL", "wiki_pattern": None, "wiki_name": None, "start_year": 2021, "teams": 0, "has_gk_data": True, "season_type": "split", "games_per_season": 0, "is_cup": True, "category": "UEFA Competitions"},
+    "FIFA World Cup": {"tm_slug": "weltmeisterschaft", "tm_code": "WM", "wiki_pattern": None, "wiki_name": None, "start_year": 1930, "teams": 0, "has_gk_data": True, "season_type": "calendar", "games_per_season": 0, "is_cup": True, "category": "International"},
+    "UEFA European Championship": {"tm_slug": "europameisterschaft", "tm_code": "EURO", "wiki_pattern": None, "wiki_name": None, "start_year": 1960, "teams": 0, "has_gk_data": True, "season_type": "calendar", "games_per_season": 0, "is_cup": True, "category": "International"},
+    "AFC Asian Cup": {"tm_slug": "asienmeisterschaft", "tm_code": "AFC", "wiki_pattern": None, "wiki_name": None, "start_year": 1956, "teams": 0, "has_gk_data": True, "season_type": "calendar", "games_per_season": 0, "is_cup": True, "category": "International"},
+    "Copa América": {"tm_slug": "copa-america", "tm_code": "CAM", "wiki_pattern": None, "wiki_name": None, "start_year": 1975, "teams": 0, "has_gk_data": True, "season_type": "calendar", "games_per_season": 0, "is_cup": True, "category": "International"},
+    "CONMEBOL Libertadores": {"tm_slug": "copa-libertadores", "tm_code": "CLI", "wiki_pattern": None, "wiki_name": None, "start_year": 1960, "teams": 0, "has_gk_data": True, "season_type": "calendar", "games_per_season": 0, "is_cup": True, "category": "International"},
+    "Saudi Pro League": {"tm_slug": "saudi-pro-league", "tm_code": "SA1", "wiki_pattern": "split", "wiki_name": "Saudi_Pro_League", "start_year": 2008, "teams": 18, "has_gk_data": True, "season_type": "split", "games_per_season": 34, "is_cup": False, "category": "Middle East"},
+    "Indian Super League": {"tm_slug": "indian-super-league", "tm_code": "IND1", "wiki_pattern": "split", "wiki_name": "Indian_Super_League_season", "start_year": 2014, "teams": 12, "has_gk_data": True, "season_type": "split", "games_per_season": 22, "is_cup": False, "category": "Asia"},
+    "J1 League": {"tm_slug": "j1-league", "tm_code": "JAP1", "wiki_pattern": "calendar", "wiki_name": "J1_League", "start_year": 1993, "teams": 20, "has_gk_data": True, "season_type": "calendar", "games_per_season": 34, "is_cup": False, "category": "Asia"},
+    "K League 1": {"tm_slug": "k-league-1", "tm_code": "RSK1", "wiki_pattern": "calendar", "wiki_name": "K_League_1", "start_year": 1983, "teams": 13, "has_gk_data": True, "season_type": "calendar", "games_per_season": 33, "is_cup": False, "category": "Asia"},
+    "Singapore Premier League": {"tm_slug": "singapore-premier-league", "tm_code": "SIN1", "wiki_pattern": "calendar", "wiki_name": "Singapore_Premier_League", "start_year": 2009, "teams": 8, "has_gk_data": True, "season_type": "calendar", "games_per_season": 21, "is_cup": False, "category": "Asia"},
+    "MLS": {"tm_slug": "major-league-soccer", "tm_code": "MLS1", "wiki_pattern": "calendar", "wiki_name": "Major_League_Soccer_season", "start_year": 1996, "teams": 29, "has_gk_data": True, "season_type": "calendar", "games_per_season": 34, "is_cup": False, "category": "Americas"},
+    "Argentine Primera División": {"tm_slug": "superliga", "tm_code": "AR1N", "wiki_pattern": "calendar", "wiki_name": "Argentine_Primera_División", "start_year": 2014, "teams": 28, "has_gk_data": False, "season_type": "calendar", "games_per_season": 27, "is_cup": False, "category": "Americas"},
+    "Brasileirão Série A": {"tm_slug": "campeonato-brasileiro-serie-a", "tm_code": "BRA1", "wiki_pattern": "calendar", "wiki_name": "Campeonato_Brasileiro_Série_A", "start_year": 2003, "teams": 20, "has_gk_data": True, "season_type": "calendar", "games_per_season": 38, "is_cup": False, "category": "Americas"},
+    "Liga BetPlay (Colombia)": {"tm_slug": "liga-betplay-dimayor", "tm_code": "COL1", "wiki_pattern": "calendar", "wiki_name": None, "start_year": 2014, "teams": 20, "has_gk_data": False, "season_type": "calendar", "games_per_season": 20, "is_cup": False, "category": "Americas"},
+    "Chilean Primera División": {"tm_slug": "campeonato-nacional", "tm_code": "CLPD", "wiki_pattern": "calendar", "wiki_name": None, "start_year": 2014, "teams": 16, "has_gk_data": False, "season_type": "calendar", "games_per_season": 30, "is_cup": False, "category": "Americas"},
+    "Uruguayan Primera División": {"tm_slug": "primera-division", "tm_code": "URU1", "wiki_pattern": "calendar", "wiki_name": None, "start_year": 2014, "teams": 16, "has_gk_data": False, "season_type": "calendar", "games_per_season": 30, "is_cup": False, "category": "Americas"},
+    "Paraguayan Primera División": {"tm_slug": "division-de-honor", "tm_code": "PAR1", "wiki_pattern": "calendar", "wiki_name": None, "start_year": 2014, "teams": 12, "has_gk_data": False, "season_type": "calendar", "games_per_season": 22, "is_cup": False, "category": "Americas"},
+    "Peruvian Liga 1": {"tm_slug": "liga-1", "tm_code": "PE1N", "wiki_pattern": "calendar", "wiki_name": None, "start_year": 2014, "teams": 19, "has_gk_data": False, "season_type": "calendar", "games_per_season": 34, "is_cup": False, "category": "Americas"},
+    "Bolivian Primera División": {"tm_slug": "division-profesional", "tm_code": "BOL1", "wiki_pattern": "calendar", "wiki_name": None, "start_year": 2014, "teams": 16, "has_gk_data": False, "season_type": "calendar", "games_per_season": 30, "is_cup": False, "category": "Americas"},
+    "Venezuelan Primera División": {"tm_slug": "primera-division", "tm_code": "VEN1", "wiki_pattern": "calendar", "wiki_name": None, "start_year": 2014, "teams": 18, "has_gk_data": False, "season_type": "calendar", "games_per_season": 34, "is_cup": False, "category": "Americas"},
 }
 
 
@@ -51,45 +58,78 @@ def detect_current_season():
 
 CURRENT_SEASON_END = detect_current_season()
 
+CATEGORY_ORDER = ["Europe", "UEFA Competitions", "International", "Middle East", "Asia", "Americas"]
+_categorised = {}
+for _name, _cfg in LEAGUE_CONFIG.items():
+    _cat = _cfg.get("category", "Other")
+    _categorised.setdefault(_cat, []).append(_name)
+LEAGUE_OPTIONS = []
+for _cat in CATEGORY_ORDER:
+    if _cat in _categorised:
+        for _name in _categorised[_cat]:
+            LEAGUE_OPTIONS.append(_name)
+
 with st.sidebar:
     st.header("Controls")
-    selected_league = st.selectbox("League", list(LEAGUE_CONFIG.keys()), index=0)
+
+    def _format_league(name):
+        cat = LEAGUE_CONFIG[name].get("category", "")
+        icon = {"Europe": "\u26bd", "UEFA Competitions": "\U0001f3c6", "International": "\U0001f30d",
+                "Middle East": "\u26bd", "Asia": "\u26bd", "Americas": "\u26bd"}.get(cat, "\u26bd")
+        return f"{icon} {name}"
+
+    selected_league = st.selectbox("Competition", LEAGUE_OPTIONS, index=0, format_func=_format_league)
     league_cfg = LEAGUE_CONFIG[selected_league]
 
-    if league_cfg["season_type"] == "split":
-        first_season_val = league_cfg["start_year"] + 1
-        all_seasons = list(range(first_season_val, CURRENT_SEASON_END + 1))
-        season = st.selectbox(
-            "Season (end year)",
-            options=all_seasons,
-            index=len(all_seasons) - 1,
-            format_func=lambda y: f"{y - 1}-{str(y)[2:]}",
+    is_tournament = league_cfg.get("is_cup", False)
+
+    if not is_tournament:
+        if league_cfg["season_type"] == "split":
+            first_season_val = league_cfg["start_year"] + 1
+            all_seasons = list(range(first_season_val, CURRENT_SEASON_END + 1))
+            season = st.selectbox(
+                "Season (end year)",
+                options=all_seasons,
+                index=len(all_seasons) - 1,
+                format_func=lambda y: f"{y - 1}-{str(y)[2:]}",
+            )
+        else:
+            first_season_val = league_cfg["start_year"]
+            current_cal = CURRENT_SEASON_END - 1
+            all_seasons = list(range(first_season_val, current_cal + 1))
+            season = st.selectbox(
+                "Season",
+                options=all_seasons,
+                index=len(all_seasons) - 1,
+            )
+
+        st.divider()
+        st.subheader("Multi-Season Analysis")
+        range_min = first_season_val
+        range_max = all_seasons[-1] if all_seasons else first_season_val
+        season_range = st.slider(
+            "Season range for analysis",
+            min_value=range_min,
+            max_value=range_max,
+            value=(range_min, range_max),
         )
     else:
-        first_season_val = league_cfg["start_year"]
-        current_cal = CURRENT_SEASON_END - 1
-        all_seasons = list(range(first_season_val, current_cal + 1))
-        season = st.selectbox(
-            "Season",
-            options=all_seasons,
-            index=len(all_seasons) - 1,
-        )
+        if league_cfg["season_type"] == "split":
+            first_season_val = league_cfg["start_year"] + 1
+        else:
+            first_season_val = league_cfg["start_year"]
+        all_seasons = []
+        season = None
+        season_range = (first_season_val, CURRENT_SEASON_END)
+        st.info(f"{selected_league} is a cup/tournament competition — only penalty analysis is available.")
 
-    st.divider()
-    st.subheader("Multi-Season Analysis")
-    range_min = first_season_val
-    range_max = all_seasons[-1] if all_seasons else first_season_val
-    season_range = st.slider(
-        "Season range for analysis",
-        min_value=range_min,
-        max_value=range_max,
-        value=(range_min, range_max),
-    )
-
-if league_cfg["season_type"] == "split":
-    caption_range = f"{league_cfg['start_year']}-{str(league_cfg['start_year'] + 1)[2:]} to {CURRENT_SEASON_END - 1}-{str(CURRENT_SEASON_END)[2:]}"
+if not is_tournament:
+    if league_cfg["season_type"] == "split":
+        caption_range = f"{league_cfg['start_year']}-{str(league_cfg['start_year'] + 1)[2:]} to {CURRENT_SEASON_END - 1}-{str(CURRENT_SEASON_END)[2:]}"
+    else:
+        caption_range = f"{league_cfg['start_year']} to {CURRENT_SEASON_END - 1}"
 else:
-    caption_range = f"{league_cfg['start_year']} to {CURRENT_SEASON_END - 1}"
+    caption_range = f"{league_cfg['start_year']}-present"
 
 st.title("Football Econometrics Dashboard")
 st.caption(f"A reproducible econometrics study of what statistically matters for success in the {selected_league} ({caption_range})")
@@ -196,8 +236,9 @@ def load_multi_season(start_year, end_year, wiki_pattern, wiki_name, season_type
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def scrape_penalty_takers(tm_slug, tm_code, season_id=None):
-    base_url = f"https://www.transfermarkt.us/{tm_slug}/elfmeterschuetzen/wettbewerb/{tm_code}/plus/1"
+def scrape_penalty_takers(tm_slug, tm_code, season_id=None, is_cup=False):
+    wb = "pokalwettbewerb" if is_cup else "wettbewerb"
+    base_url = f"https://www.transfermarkt.us/{tm_slug}/elfmeterschuetzen/{wb}/{tm_code}/plus/1"
     if season_id:
         base_url += f"/saison_id/{season_id}"
     headers = {
@@ -246,8 +287,9 @@ def scrape_penalty_takers(tm_slug, tm_code, season_id=None):
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def scrape_penalty_goalkeepers(tm_slug, tm_code, season_id=None):
-    base_url = f"https://www.transfermarkt.us/{tm_slug}/elfmetertoeter/wettbewerb/{tm_code}/plus/1"
+def scrape_penalty_goalkeepers(tm_slug, tm_code, season_id=None, is_cup=False):
+    wb = "pokalwettbewerb" if is_cup else "wettbewerb"
+    base_url = f"https://www.transfermarkt.us/{tm_slug}/elfmetertoeter/{wb}/{tm_code}/plus/1"
     if season_id:
         base_url += f"/saison_id/{season_id}"
     headers = {
@@ -298,12 +340,12 @@ def scrape_penalty_goalkeepers(tm_slug, tm_code, season_id=None):
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def load_multi_season_penalties(start_year, end_year, tm_slug, tm_code, has_gk_data, season_type):
+def load_multi_season_penalties(start_year, end_year, tm_slug, tm_code, has_gk_data, season_type, is_cup=False):
     taker_frames = []
     gk_frames = []
     for yr in range(start_year, end_year + 1):
         try:
-            t = scrape_penalty_takers(tm_slug, tm_code, yr)
+            t = scrape_penalty_takers(tm_slug, tm_code, yr, is_cup=is_cup)
             if not t.empty:
                 t["Season"] = format_season_label(yr, season_type)
                 taker_frames.append(t)
@@ -311,7 +353,7 @@ def load_multi_season_penalties(start_year, end_year, tm_slug, tm_code, has_gk_d
             pass
         if has_gk_data:
             try:
-                g = scrape_penalty_goalkeepers(tm_slug, tm_code, yr)
+                g = scrape_penalty_goalkeepers(tm_slug, tm_code, yr, is_cup=is_cup)
                 if not g.empty:
                     g["Season"] = format_season_label(yr, season_type)
                     gk_frames.append(g)
@@ -344,11 +386,11 @@ def load_multi_season_penalties(start_year, end_year, tm_slug, tm_code, has_gk_d
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def load_alltime_taker_penalties(tm_slug, tm_code, start_year, season_type):
+def load_alltime_taker_penalties(tm_slug, tm_code, start_year, season_type, is_cup=False):
     taker_frames = []
     for yr in range(start_year, CURRENT_SEASON_END + 1):
         try:
-            t = scrape_penalty_takers(tm_slug, tm_code, yr)
+            t = scrape_penalty_takers(tm_slug, tm_code, yr, is_cup=is_cup)
             if not t.empty:
                 t["Season"] = format_season_label(yr, season_type)
                 taker_frames.append(t)
@@ -388,11 +430,11 @@ def load_alltime_taker_penalties(tm_slug, tm_code, start_year, season_type):
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def load_alltime_gk_penalties(tm_slug, tm_code, start_year, season_type):
+def load_alltime_gk_penalties(tm_slug, tm_code, start_year, season_type, is_cup=False):
     gk_frames = []
     for yr in range(start_year, CURRENT_SEASON_END + 1):
         try:
-            g = scrape_penalty_goalkeepers(tm_slug, tm_code, yr)
+            g = scrape_penalty_goalkeepers(tm_slug, tm_code, yr, is_cup=is_cup)
             if not g.empty:
                 g["Season"] = format_season_label(yr, season_type)
                 gk_frames.append(g)
@@ -972,7 +1014,8 @@ try:
         with st.spinner(f"Loading all-time penalty taker records ({league_cfg['start_year']}-present)..."):
             alltime_takers = load_alltime_taker_penalties(
                 league_cfg["tm_slug"], league_cfg["tm_code"],
-                league_cfg["start_year"], league_cfg["season_type"]
+                league_cfg["start_year"], league_cfg["season_type"],
+                is_cup=league_cfg.get("is_cup", False)
             )
 
         if not alltime_takers.empty:
@@ -1022,7 +1065,8 @@ try:
             with st.spinner(f"Loading all-time goalkeeper penalty records ({league_cfg['start_year']}-present)..."):
                 alltime_gks = load_alltime_gk_penalties(
                     league_cfg["tm_slug"], league_cfg["tm_code"],
-                    league_cfg["start_year"], league_cfg["season_type"]
+                    league_cfg["start_year"], league_cfg["season_type"],
+                    is_cup=league_cfg.get("is_cup", False)
                 )
 
             if not alltime_gks.empty:
@@ -1363,7 +1407,10 @@ try:
         st.caption(f"Penalty data source: Transfermarkt ({selected_league}). Shot placement research data aggregated from academic studies on professional penalty kicks.")
 
 except requests.exceptions.HTTPError:
-    season_label = format_season_label(season, league_cfg["season_type"])
-    st.error(f"Could not fetch data for the {selected_league} {season_label} season. The page may not be available.")
+    if season is not None:
+        season_label = format_season_label(season, league_cfg["season_type"])
+        st.error(f"Could not fetch data for the {selected_league} {season_label} season. The page may not be available.")
+    else:
+        st.error(f"Could not fetch data for the {selected_league}.")
 except Exception as e:
     st.error(f"An error occurred: {e}")
