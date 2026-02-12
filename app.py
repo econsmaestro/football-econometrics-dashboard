@@ -885,8 +885,17 @@ try:
             "Penalty Analysis",
             "Team Insights",
         ])
+        if not multi_season.empty and "Squad" in multi_season.columns:
+            _all_teams_sidebar = sorted(multi_season["Squad"].unique().tolist())
+            with st.sidebar:
+                st.divider()
+                st.subheader("Team Insights")
+                selected_team = st.selectbox("Select a team", _all_teams_sidebar, key="team_insights_select")
+        else:
+            selected_team = None
     else:
         tab5, = st.tabs(["Penalty Analysis"])
+        selected_team = None
 
     if has_league_tables:
         season_label = format_season_label(season, league_cfg["season_type"])
@@ -1957,12 +1966,9 @@ try:
                     f"Note: {detail_str} — all rebased to the current {league_cfg['games_per_season']}-game standard for fair comparison."
                 )
 
-            if not multi_season.empty and "Squad" in multi_season.columns:
-                all_teams = sorted(multi_season["Squad"].unique().tolist())
+            if not multi_season.empty and "Squad" in multi_season.columns and selected_team is not None:
                 n_teams = league_cfg["teams"]
                 games_per_season = league_cfg["games_per_season"]
-
-                selected_team = st.selectbox("Select a team", all_teams, key="team_insights_select")
 
                 team_data = multi_season[multi_season["Squad"] == selected_team].copy()
                 team_data = team_data.sort_values("Season_End")
