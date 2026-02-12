@@ -468,6 +468,74 @@ try:
             )
 
         st.divider()
+        st.subheader("Model 1b: Recent Era (Last 5 Completed Seasons)")
+        st.markdown(
+            "The Premier League has changed significantly due to big-money takeovers widening the gap "
+            "between top and bottom teams. This model uses only the **last 5 completed seasons** to "
+            "capture current dynamics more accurately."
+        )
+
+        recent_cutoff = CURRENT_SEASON_END - 5
+        recent_era = multi_season[
+            (multi_season["Season_End"] >= recent_cutoff) &
+            (multi_season["Season_End"] < CURRENT_SEASON_END)
+        ]
+        if not recent_era.empty and "GF" in recent_era.columns and "GA" in recent_era.columns:
+            reg_recent = recent_era[["Pts", "GF", "GA"]].dropna()
+            if len(reg_recent) > 5:
+                X_rec = sm.add_constant(reg_recent[["GF", "GA"]])
+                y_rec = reg_recent["Pts"]
+                model_rec = sm.OLS(y_rec, X_rec).fit()
+
+                st.markdown(f"*Using {len(reg_recent)} team-seasons from {recent_cutoff}-{str(recent_cutoff+1)[2:]} to {CURRENT_SEASON_END - 1}-{str(CURRENT_SEASON_END)[2:]}*")
+
+                rcol1, rcol2, rcol3 = st.columns(3)
+                rcol1.metric("R-squared", f"{model_rec.rsquared:.4f}")
+                rcol2.metric("Adj. R-squared", f"{model_rec.rsquared_adj:.4f}")
+                rcol3.metric("F-statistic", f"{model_rec.fvalue:.2f}")
+
+                coef_rec = pd.DataFrame({
+                    "Factor": ["Baseline (starting points)", "Goals Scored (GF)", "Goals Conceded (GA)"],
+                    "Effect on Points": model_rec.params.values.round(4),
+                    "Std. Error": model_rec.bse.values.round(4),
+                    "Confidence (t-value)": model_rec.tvalues.values.round(4),
+                    "Significance (p-value)": model_rec.pvalues.values.round(6),
+                })
+                st.dataframe(coef_rec.set_index("Factor"), use_container_width=True)
+
+                st.markdown("**Comparison: Full History vs Recent Era**")
+                if "GF" in multi_season.columns:
+                    comp_data = pd.DataFrame({
+                        "Metric": ["R-squared", "GF coefficient", "GA coefficient", "Observations"],
+                        f"Full History ({multi_season['Season_End'].min():.0f}-{multi_season['Season_End'].max():.0f})": [
+                            f"{model.rsquared:.4f}",
+                            f"{model.params['GF']:.4f}",
+                            f"{model.params['GA']:.4f}",
+                            f"{len(reg_data)}",
+                        ],
+                        f"Recent 5 Seasons ({recent_cutoff}-{CURRENT_SEASON_END - 1})": [
+                            f"{model_rec.rsquared:.4f}",
+                            f"{model_rec.params['GF']:.4f}",
+                            f"{model_rec.params['GA']:.4f}",
+                            f"{len(reg_recent)}",
+                        ],
+                    })
+                    st.dataframe(comp_data.set_index("Metric"), use_container_width=True)
+
+                gf_diff = model_rec.params["GF"] - model.params["GF"]
+                ga_diff = model_rec.params["GA"] - model.params["GA"]
+                st.markdown(
+                    f"**In plain English:** In the recent era, each goal scored is worth "
+                    f"{'more' if gf_diff > 0 else 'less'} ({model_rec.params['GF']:.3f} vs {model.params['GF']:.3f}) "
+                    f"and each goal conceded costs "
+                    f"{'more' if abs(model_rec.params['GA']) > abs(model.params['GA']) else 'less'} "
+                    f"({model_rec.params['GA']:.3f} vs {model.params['GA']:.3f}). "
+                    f"{'The widening gap between top and bottom teams means goals have a stronger impact on points in recent seasons.' if abs(gf_diff) > 0.01 or abs(ga_diff) > 0.01 else 'The relationship has remained relatively stable.'}"
+                )
+        else:
+            st.info("Not enough recent completed seasons in the selected range to build this model.")
+
+        st.divider()
         st.subheader("Model 2: Points from Match Results")
         st.markdown(
             "**Model 2:** We predict **Points** using **Wins (W)**, **Draws (D)**, and **Losses (L)** "
@@ -592,7 +660,10 @@ try:
         st.subheader("Predictions & Insights")
 
         st.markdown("### Points Predictor")
-        st.markdown("Based on the OLS regression model (Pts ~ GF + GA), estimate expected points for a hypothetical team:")
+        st.markdown(
+            "Estimate expected points using **two models**: one trained on the full history, "
+            "and one on just the last 5 completed seasons (which better reflects the modern game)."
+        )
 
         col_p1, col_p2 = st.columns(2)
         with col_p1:
@@ -611,22 +682,47 @@ try:
             prediction_interval = model_pred.get_prediction(new_X)
             pi = prediction_interval.conf_int(alpha=0.05)[0]
 
+            pred_cutoff = CURRENT_SEASON_END - 5
+            recent_pred_data = multi_season[
+                (multi_season["Season_End"] >= pred_cutoff) &
+                (multi_season["Season_End"] < CURRENT_SEASON_END)
+            ][["Pts", "GF", "GA"]].dropna()
+
+            has_recent_model = len(recent_pred_data) > 5
+            if has_recent_model:
+                X_rpred = sm.add_constant(recent_pred_data[["GF", "GA"]])
+                y_rpred = recent_pred_data["Pts"]
+                model_rpred = sm.OLS(y_rpred, X_rpred).fit()
+                predicted_pts_recent = model_rpred.predict(new_X)[0]
+                pi_recent = model_rpred.get_prediction(new_X).conf_int(alpha=0.05)[0]
+
+            st.markdown("**Full History Model**")
             col_pred1, col_pred2, col_pred3 = st.columns(3)
             col_pred1.metric("Predicted Points", f"{predicted_pts:.1f}")
             col_pred2.metric("95% CI Lower", f"{pi[0]:.1f}")
             col_pred3.metric("95% CI Upper", f"{pi[1]:.1f}")
 
+            if has_recent_model:
+                st.markdown(f"**Recent Era Model (last 5 seasons)**")
+                col_rp1, col_rp2, col_rp3 = st.columns(3)
+                col_rp1.metric("Predicted Points", f"{predicted_pts_recent:.1f}",
+                               delta=f"{predicted_pts_recent - predicted_pts:+.1f} vs full history")
+                col_rp2.metric("95% CI Lower", f"{pi_recent[0]:.1f}")
+                col_rp3.metric("95% CI Upper", f"{pi_recent[1]:.1f}")
+
+            best_pred = predicted_pts_recent if has_recent_model else predicted_pts
             completed_seasons = multi_season[multi_season["Season_End"] < CURRENT_SEASON_END]
             if completed_seasons.empty:
                 completed_seasons = multi_season
             recent = completed_seasons[completed_seasons["Season_End"] == completed_seasons["Season_End"].max()]
             if not recent.empty:
-                closest = recent.iloc[(recent["Pts"] - predicted_pts).abs().argsort()[:1]]
+                closest = recent.iloc[(recent["Pts"] - best_pred).abs().argsort()[:1]]
                 recent_label = f"{int(closest['Season_End'].values[0]) - 1}-{str(int(closest['Season_End'].values[0]))[2:]}"
+                model_label = "recent era model" if has_recent_model else "full history model"
                 st.markdown(
                     f"A team with {pred_gf} goals scored and {pred_ga} conceded would be expected to "
-                    f"finish with approximately **{predicted_pts:.0f} points**, similar to "
-                    f"**{closest['Squad'].values[0]}** ({closest['Pts'].values[0]:.0f} pts) "
+                    f"finish with approximately **{best_pred:.0f} points** (using the {model_label}), "
+                    f"similar to **{closest['Squad'].values[0]}** ({closest['Pts'].values[0]:.0f} pts) "
                     f"in the {recent_label} season."
                 )
 
