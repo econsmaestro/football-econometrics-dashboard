@@ -116,7 +116,7 @@ with st.sidebar:
     _logo_url = f"https://tmssl.akamaized.net/images/logo/header/{_logo_code}.png?lm=1"
     st.markdown(
         f'<div style="text-align:center;padding:8px 0;">'
-        f'<img src="{_logo_url}" alt="{selected_league}" style="max-height:80px;max-width:160px;">'
+        f'<img src="{_logo_url}" alt="{selected_league}" style="max-height:80px;max-width:160px;filter:brightness(0) invert(1);">'
         f'<div style="font-size:0.85em;color:#aaa;margin-top:4px;">{selected_league}</div>'
         f'</div>',
         unsafe_allow_html=True,
