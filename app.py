@@ -270,6 +270,45 @@ def load_multi_season_penalties(start_year, end_year):
     return agg_takers, agg_gks
 
 
+@st.cache_data(ttl=3600, show_spinner=False)
+def load_alltime_gk_penalties():
+    gk_frames = []
+    for yr in range(1992, CURRENT_SEASON_END + 1):
+        try:
+            g = scrape_penalty_goalkeepers(yr)
+            if not g.empty:
+                g["Season"] = f"{yr}-{str(yr+1)[2:]}"
+                gk_frames.append(g)
+        except Exception:
+            pass
+
+    if not gk_frames:
+        return pd.DataFrame()
+
+    all_gks = pd.concat(gk_frames, ignore_index=True)
+
+    per_club = all_gks.groupby(["Goalkeeper", "Club"]).agg(
+        Faced=("Faced", "sum"),
+        Saved=("Saved", "sum"),
+    ).reset_index()
+    clubs_list = per_club.groupby("Goalkeeper")["Club"].apply(lambda x: ", ".join(sorted(x.unique()))).reset_index()
+    clubs_list.columns = ["Goalkeeper", "Clubs"]
+
+    agg = all_gks.groupby("Goalkeeper").agg(
+        Faced=("Faced", "sum"),
+        Saved=("Saved", "sum"),
+        Seasons=("Season", lambda x: len(x.unique())),
+        First_Season=("Season", "min"),
+        Last_Season=("Season", "max"),
+    ).reset_index()
+    agg = agg.merge(clubs_list, on="Goalkeeper", how="left")
+    agg["Save %"] = (agg["Saved"] / agg["Faced"] * 100).round(1)
+    agg["Conceded"] = agg["Faced"] - agg["Saved"]
+    agg = agg[["Goalkeeper", "Clubs", "Seasons", "First_Season", "Last_Season",
+               "Faced", "Saved", "Conceded", "Save %"]]
+    return agg
+
+
 ZONE_PROBS = {
     "Bottom-Left":  {"Taker %": 25.2, "GK Save %": 18.5},
     "Bottom-Centre": {"Taker %": 8.3, "GK Save %": 55.0},
@@ -804,12 +843,26 @@ try:
                 "43% miss the target entirely including hitting the woodwork)."
             )
 
-        if not agg_gks.empty:
-            st.subheader("Goalkeeper Penalty Records")
-            st.markdown(f"**{len(agg_gks)} goalkeepers** with penalty-saving records.")
-            gks_display = agg_gks.sort_values("Faced", ascending=False).reset_index(drop=True)
-            gks_display.index += 1
-            st.dataframe(gks_display, use_container_width=True, height=400)
+        st.divider()
+        st.subheader("Goalkeeper Penalty Records (All-Time Premier League Era)")
+        st.markdown(
+            "Every goalkeeper who has faced a penalty in the Premier League since 1992, "
+            "sorted alphabetically. Use the search box to find a specific keeper."
+        )
+        with st.spinner("Loading all-time goalkeeper penalty records (1992-present)..."):
+            alltime_gks = load_alltime_gk_penalties()
+
+        if not alltime_gks.empty:
+            gk_search = st.text_input("Search for a goalkeeper", "", key="gk_search", placeholder="e.g. Schmeichel, De Gea, Alisson...")
+            gks_sorted = alltime_gks.sort_values("Goalkeeper", ascending=True).reset_index(drop=True)
+            if gk_search.strip():
+                search_term = gk_search.strip().lower()
+                gks_sorted = gks_sorted[gks_sorted["Goalkeeper"].str.lower().str.contains(search_term, na=False)]
+            gks_sorted.index += 1
+            st.markdown(f"**{len(gks_sorted)} goalkeeper{'s' if len(gks_sorted) != 1 else ''}** found.")
+            st.dataframe(gks_sorted, use_container_width=True, height=500)
+        else:
+            st.warning("Could not load goalkeeper penalty records.")
 
         st.divider()
         st.subheader("Shot Placement Analysis")
@@ -892,23 +945,27 @@ try:
         league_avg_conversion = 77.0
         league_avg_save = 17.0
 
-        if not agg_takers.empty and not agg_gks.empty:
+        predictor_gk_data = alltime_gks if not alltime_gks.empty else agg_gks
+        has_predictor_data = not agg_takers.empty and not predictor_gk_data.empty
+        if has_predictor_data:
+            gk_name_col = "Goalkeeper"
             taker_list = agg_takers.sort_values("Penalties", ascending=False)["Player"].tolist()
-            gk_list = agg_gks.sort_values("Faced", ascending=False)["Goalkeeper"].tolist()
+            gk_list = predictor_gk_data.sort_values("Faced", ascending=False)[gk_name_col].tolist()
 
             pred_col1, pred_col2 = st.columns(2)
             with pred_col1:
                 selected_taker = st.selectbox("Penalty Taker", taker_list, key="pen_taker")
             with pred_col2:
-                selected_gk = st.selectbox("Goalkeeper", gk_list, key="pen_gk")
+                selected_gk = st.selectbox("Goalkeeper (all-time PL era)", gk_list, key="pen_gk")
 
             taker_row = agg_takers[agg_takers["Player"] == selected_taker].iloc[0]
-            gk_row = agg_gks[agg_gks["Goalkeeper"] == selected_gk].iloc[0]
+            gk_row = predictor_gk_data[predictor_gk_data[gk_name_col] == selected_gk].iloc[0]
 
             taker_conv = taker_row["Conversion %"]
             taker_pens = taker_row["Penalties"]
             gk_save_rate = gk_row["Save %"]
             gk_faced = gk_row["Faced"]
+            gk_club_display = gk_row.get("Clubs", gk_row.get("Club", ""))
 
             taker_weight = min(taker_pens / 10.0, 1.0)
             gk_weight = min(gk_faced / 10.0, 1.0)
@@ -925,7 +982,7 @@ try:
             p_save /= total
             p_miss /= total
 
-            st.markdown(f"**{selected_taker}** ({taker_row['Club']}) vs **{selected_gk}** ({gk_row['Club']})")
+            st.markdown(f"**{selected_taker}** ({taker_row['Club']}) vs **{selected_gk}** ({gk_club_display})")
 
             res_col1, res_col2, res_col3 = st.columns(3)
             res_col1.metric("Goal Probability", f"{p_goal * 100:.1f}%")
@@ -1004,12 +1061,12 @@ try:
                 f"Remember: this is YOUR left/right as the goalkeeper facing the striker. "
                 f"The top corners have the lowest save rates (<6%) — if the taker goes there, it's very hard to stop."
             )
-        elif agg_takers.empty and agg_gks.empty:
+        elif agg_takers.empty and predictor_gk_data.empty:
             st.warning("No penalty data could be loaded. Try adjusting the season range.")
         else:
             if agg_takers.empty:
                 st.warning("Penalty taker data could not be loaded.")
-            if agg_gks.empty:
+            if predictor_gk_data.empty:
                 st.warning("Goalkeeper save data could not be loaded.")
 
         st.divider()
