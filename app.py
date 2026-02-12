@@ -866,7 +866,8 @@ try:
                     gks_sorted = gks_sorted[gks_sorted["Goalkeeper"].str.lower().str.contains(search_term, na=False)]
                 gks_sorted.index += 1
                 st.markdown(f"**{len(gks_sorted)} goalkeeper{'s' if len(gks_sorted) != 1 else ''}** found.")
-                st.dataframe(gks_sorted, use_container_width=True, height=500)
+                table_height = min(500, max(80, 35 + len(gks_sorted) * 35))
+                st.dataframe(gks_sorted, use_container_width=True, height=table_height)
             gk_search_fragment()
         else:
             st.warning("Could not load goalkeeper penalty records.")
