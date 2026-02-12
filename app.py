@@ -1934,57 +1934,198 @@ try:
                     st.divider()
                     st.markdown("### Strengths & Weaknesses")
 
-                    if "W" in team_data.columns and "D" in team_data.columns and "L" in team_data.columns:
-                        avg_w = team_data["W"].mean()
-                        avg_d = team_data["D"].mean()
-                        avg_l = team_data["L"].mean()
+                    has_wdl = "W" in team_data.columns and "D" in team_data.columns and "L" in team_data.columns
+                    has_goals = "GF" in team_data.columns and "GA" in team_data.columns
 
+                    champ_data = multi_season[multi_season["Pos"] == 1]
+                    top_n_data = multi_season[multi_season["Pos"] <= top_threshold]
+                    champ_avg_gf = champ_data["GF"].mean() if has_goals and not champ_data.empty else 0
+                    champ_avg_ga = champ_data["GA"].mean() if has_goals and not champ_data.empty else 0
+                    champ_avg_w = champ_data["W"].mean() if has_wdl and not champ_data.empty else 0
+                    champ_avg_d = champ_data["D"].mean() if has_wdl and not champ_data.empty else 0
+                    champ_avg_l = champ_data["L"].mean() if has_wdl and not champ_data.empty else 0
+                    top_n_avg_gf = top_n_data["GF"].mean() if has_goals and not top_n_data.empty else 0
+                    top_n_avg_ga = top_n_data["GA"].mean() if has_goals and not top_n_data.empty else 0
+
+                    if has_wdl:
+                        avg_w = team_data["W"].mean()
                         league_avg_w = multi_season["W"].mean()
                         league_avg_l = multi_season["L"].mean()
+                        avg_l = team_data["L"].mean()
 
-                        strengths = []
-                        weaknesses = []
+                    strengths = []
+                    weaknesses = []
+
+                    gf_per_game = avg_gf / games_per_season if games_per_season > 0 else 0
+                    ga_per_game = avg_ga / games_per_season if games_per_season > 0 else 0
+                    league_gf_pg = league_avg_gf_val / games_per_season if games_per_season > 0 else 0
+                    league_ga_pg = league_avg_ga_val / games_per_season if games_per_season > 0 else 0
+                    champ_gf_pg = champ_avg_gf / games_per_season if games_per_season > 0 else 0
+                    champ_ga_pg = champ_avg_ga / games_per_season if games_per_season > 0 else 0
+
+                    if has_goals:
+                        gf_diff = avg_gf - league_avg_gf_val
+                        ga_diff = avg_ga - league_avg_ga_val
+                        gf_vs_champ = avg_gf - champ_avg_gf
+                        ga_vs_champ = avg_ga - champ_avg_ga
 
                         if avg_gf > league_avg_gf_val * 1.15:
-                            strengths.append(f"Strong attack — averaging {avg_gf:.1f} goals/season vs league avg {league_avg_gf_val:.1f}")
-                        elif avg_gf < league_avg_gf_val * 0.85:
-                            weaknesses.append(f"Below-average attack — averaging {avg_gf:.1f} goals/season vs league avg {league_avg_gf_val:.1f}")
+                            if avg_gf >= champ_avg_gf * 0.95:
+                                strengths.append(
+                                    f"**Elite attack** — scoring {gf_per_game:.2f} goals/game ({avg_gf:.1f}/season), "
+                                    f"on par with title-winning teams ({champ_gf_pg:.2f}/game). "
+                                    f"The forward line and creative midfield are performing at the highest level."
+                                )
+                            else:
+                                strengths.append(
+                                    f"**Above-average attack** — scoring {gf_per_game:.2f} goals/game ({avg_gf:.1f}/season), "
+                                    f"+{gf_diff:.0f} above the league average. "
+                                    f"Good goal threat from the attacking unit but still {abs(gf_vs_champ):.0f} goals/season short of champion-level output."
+                                )
+                        elif avg_gf < league_avg_gf_val * 0.90:
+                            goals_short = league_avg_gf_val - avg_gf
+                            weaknesses.append(
+                                f"**Weak goal output** — scoring only {gf_per_game:.2f} goals/game ({avg_gf:.1f}/season), "
+                                f"**{goals_short:.0f} fewer than the league average**. "
+                                f"This points to a lack of quality in the final third — whether that's finishing (strikers not converting chances), "
+                                f"creativity (midfielders not creating enough clear-cut opportunities), or width (full-backs/wingers not delivering "
+                                f"enough crosses and cutbacks). Champions average {champ_gf_pg:.2f} goals/game."
+                            )
+                        elif avg_gf < league_avg_gf_val:
+                            weaknesses.append(
+                                f"**Slightly below-average attack** — scoring {gf_per_game:.2f} goals/game ({avg_gf:.1f}/season) "
+                                f"vs league avg {league_gf_pg:.2f}/game. Not a crisis but an area where marginal improvements "
+                                f"(e.g. a more clinical striker, better set-piece delivery) would directly translate to more wins."
+                            )
 
                         if avg_ga < league_avg_ga_val * 0.85:
-                            strengths.append(f"Strong defense — conceding only {avg_ga:.1f} goals/season vs league avg {league_avg_ga_val:.1f}")
-                        elif avg_ga > league_avg_ga_val * 1.15:
-                            weaknesses.append(f"Leaky defense — conceding {avg_ga:.1f} goals/season vs league avg {league_avg_ga_val:.1f}")
+                            if avg_ga <= champ_avg_ga * 1.05:
+                                strengths.append(
+                                    f"**Elite defense** — conceding just {ga_per_game:.2f} goals/game ({avg_ga:.1f}/season), "
+                                    f"matching championship-winning levels ({champ_ga_pg:.2f}/game). "
+                                    f"The centre-back partnership and goalkeeper are providing a rock-solid foundation."
+                                )
+                            else:
+                                strengths.append(
+                                    f"**Strong defense** — conceding only {ga_per_game:.2f} goals/game ({avg_ga:.1f}/season), "
+                                    f"well below the league average ({league_ga_pg:.2f}/game). "
+                                    f"Good defensive structure and organisation across the back line."
+                                )
+                        elif avg_ga > league_avg_ga_val * 1.10:
+                            extra_conceded = avg_ga - league_avg_ga_val
+                            weaknesses.append(
+                                f"**Leaky defense** — conceding {ga_per_game:.2f} goals/game ({avg_ga:.1f}/season), "
+                                f"**{extra_conceded:.0f} more than the league average** per season. "
+                                f"This suggests vulnerabilities in central defense (centre-backs being beaten too easily, "
+                                f"poor aerial duels, or slow recovery runs), defensive midfield screening (opponents playing through "
+                                f"the middle too often), or goalkeeper reliability. Champions concede just {champ_ga_pg:.2f}/game."
+                            )
+                        elif avg_ga > league_avg_ga_val:
+                            weaknesses.append(
+                                f"**Slightly porous defense** — conceding {ga_per_game:.2f} goals/game ({avg_ga:.1f}/season) "
+                                f"vs league avg {league_ga_pg:.2f}/game. Small improvements in defensive positioning or "
+                                f"investing in a better centre-back or defensive midfielder could tighten this up."
+                            )
+
+                        if avg_gd > 0 and avg_gf > league_avg_gf_val and avg_ga < league_avg_ga_val:
+                            strengths.append(
+                                f"**Balanced squad** — positive goal difference of +{avg_gd:.1f}/season with both above-average "
+                                f"attacking and defensive records. This balance is the hallmark of a well-coached, well-recruited team."
+                            )
+
+                    if has_wdl:
+                        win_pct = (avg_w / games_per_season * 100) if games_per_season > 0 else 0
+                        champ_win_pct = (champ_avg_w / games_per_season * 100) if games_per_season > 0 else 0
+                        draw_pct = (avg_d / games_per_season * 100) if games_per_season > 0 else 0
+                        loss_pct = (avg_l / games_per_season * 100) if games_per_season > 0 else 0
 
                         if avg_w > league_avg_w * 1.2:
-                            strengths.append(f"High win rate — averaging {avg_w:.1f} wins/season vs league avg {league_avg_w:.1f}")
-                        elif avg_w < league_avg_w * 0.8:
-                            weaknesses.append(f"Low win rate — averaging {avg_w:.1f} wins/season vs league avg {league_avg_w:.1f}")
+                            strengths.append(
+                                f"**High win rate ({win_pct:.0f}%)** — averaging {avg_w:.1f} wins/season vs league avg {league_avg_w:.1f}. "
+                                f"{'This is near champion level (' + f'{champ_win_pct:.0f}' + '%).' if avg_w >= champ_avg_w * 0.9 else 'Strong mentality in games where they are expected to win.'}"
+                            )
+                        elif avg_w < league_avg_w * 0.85:
+                            wins_short = league_avg_w - avg_w
+                            weaknesses.append(
+                                f"**Low win rate ({win_pct:.0f}%)** — averaging only {avg_w:.1f} wins/season, "
+                                f"**{wins_short:.1f} fewer than average**. This could stem from inability to break down "
+                                f"defensive teams (lack of creative midfielders or pacy wingers to unlock tight defences), "
+                                f"poor game management (conceding late equalisers), or lack of squad depth to maintain intensity."
+                            )
 
-                        if avg_d > league_avg_d * 1.3:
-                            weaknesses.append(f"Too many draws — averaging {avg_d:.1f}/season vs league avg {league_avg_d:.1f}. Converting draws to wins is a key improvement area.")
+                        if avg_d > league_avg_d * 1.25:
+                            extra_draws = avg_d - league_avg_d
+                            pts_left = extra_draws * 2
+                            weaknesses.append(
+                                f"**Draw-prone ({draw_pct:.0f}% of games)** — averaging {avg_d:.1f} draws/season, "
+                                f"**{extra_draws:.1f} more than average**, leaving ~{pts_left:.0f} points on the table each season. "
+                                f"This typically indicates a team that dominates possession or territory but lacks a cutting edge — "
+                                f"either the final ball isn't good enough, the strikers aren't clinical, or the team sits back "
+                                f"too early after taking the lead. A more aggressive tactical approach or a "
+                                f"game-changing attacker off the bench would help convert draws into wins."
+                            )
 
                         if avg_l < league_avg_l * 0.7:
-                            strengths.append(f"Rarely lose — averaging only {avg_l:.1f} losses/season vs league avg {league_avg_l:.1f}")
-                        elif avg_l > league_avg_l * 1.3:
-                            weaknesses.append(f"Lose too often — averaging {avg_l:.1f} losses/season vs league avg {league_avg_l:.1f}")
+                            strengths.append(
+                                f"**Hard to beat** — losing only {avg_l:.1f} games/season ({loss_pct:.0f}%) vs league avg {league_avg_l:.1f}. "
+                                f"This defensive resilience and competitive mentality is a major asset."
+                            )
+                        elif avg_l > league_avg_l * 1.25:
+                            extra_losses = avg_l - league_avg_l
+                            weaknesses.append(
+                                f"**Lose too often** — averaging {avg_l:.1f} losses/season ({loss_pct:.0f}%), "
+                                f"**{extra_losses:.1f} more than average**. Frequent defeats suggest either a quality gap "
+                                f"against stronger opponents (need better recruitment), tactical inflexibility (same approach "
+                                f"regardless of opponent), or mental fragility (collapsing after conceding first)."
+                            )
 
-                        if avg_gd > 0 and avg_pos > 4:
-                            weaknesses.append(f"Positive goal difference (+{avg_gd:.1f}) but average position is {avg_pos:.1f} — suggests inconsistency or poor results in tight games")
+                    if has_goals and has_wdl:
+                        if avg_gd > 0 and avg_pos > top_threshold:
+                            weaknesses.append(
+                                f"**Inconsistency problem** — positive goal difference (+{avg_gd:.1f}) but average finish "
+                                f"of {avg_pos:.1f} (outside top {top_threshold}). This mismatch suggests the team wins big "
+                                f"against weaker sides but drops too many points against direct rivals. Better tactical "
+                                f"preparation for 'six-pointer' matches and tighter game management when leading are needed."
+                            )
 
-                        if strengths:
-                            st.markdown("**Strengths:**")
-                            for s in strengths:
-                                st.markdown(f"- {s}")
-                        else:
-                            st.info("Performance is close to league averages across all metrics.")
+                    if len(team_data) >= 3:
+                        recent_3 = team_data.tail(3)
+                        older = team_data.iloc[:-3] if len(team_data) > 3 else team_data
+                        if not older.empty:
+                            recent_pts = recent_3["Pts"].mean()
+                            older_pts = older["Pts"].mean()
+                            pts_trend = recent_pts - older_pts
+                            if pts_trend > 5:
+                                strengths.append(
+                                    f"**Improving trajectory** — averaging {recent_pts:.0f} pts in the last 3 seasons vs {older_pts:.0f} earlier. "
+                                    f"The current project is heading in the right direction with +{pts_trend:.0f} pts improvement."
+                                )
+                            elif pts_trend < -5:
+                                weaknesses.append(
+                                    f"**Declining trajectory** — averaging {recent_pts:.0f} pts in the last 3 seasons vs {older_pts:.0f} earlier. "
+                                    f"A drop of {abs(pts_trend):.0f} pts suggests stagnation or regression — could be ageing squad, "
+                                    f"manager bounce wearing off, or failure to reinvest. A squad refresh or tactical rethink may be needed."
+                                )
 
-                        if weaknesses:
-                            st.markdown("**Areas for Improvement:**")
-                            for w in weaknesses:
-                                st.markdown(f"- {w}")
+                    if strengths:
+                        st.markdown("**Strengths:**")
+                        for s in strengths:
+                            st.markdown(f"- {s}")
+
+                    if weaknesses:
+                        st.markdown("**Areas for Improvement:**")
+                        for w in weaknesses:
+                            st.markdown(f"- {w}")
+
+                    if not strengths and not weaknesses:
+                        st.info("Performance is close to league averages across all metrics — a solid mid-table team with no extreme strengths or weaknesses.")
 
                     st.divider()
                     st.markdown("### Recommendations")
+                    st.markdown(
+                        f"Actionable steps for **{selected_team}** to improve their league standing, "
+                        f"based on where the data shows the biggest gaps compared to title-winning and top-{top_threshold} teams."
+                    )
 
                     if not hist_champ_pts.empty and not team_data.empty:
                         latest_pts = latest["Pts"]
@@ -1997,41 +2138,107 @@ try:
 
                         if pts_gap_title > 0 and games_per_season > 0:
                             extra_wins_needed = pts_gap_title / 3
-                            recs.append(
-                                f"To reach the historical title target of ~{title_target:.0f} points, "
-                                f"{selected_team} needs approximately **{extra_wins_needed:.1f} more wins per season** "
-                                f"(or equivalent points from draws)."
-                            )
+                            if extra_wins_needed >= 5:
+                                recs.append(
+                                    f"**Long-term project needed.** The gap to the title ({pts_gap_title:.0f} pts, ~{extra_wins_needed:.0f} extra wins/season) "
+                                    f"is significant. Focus on building a squad over 2–3 transfer windows rather than short-term fixes. "
+                                    f"Prioritise: a) recruiting young, high-ceiling talent who can grow into the system, "
+                                    f"b) developing a clear tactical identity, and c) improving the academy pipeline to reduce reliance on expensive signings."
+                                )
+                            elif extra_wins_needed >= 2:
+                                recs.append(
+                                    f"**Within striking distance of the title.** The gap is {pts_gap_title:.0f} pts (~{extra_wins_needed:.1f} more wins/season). "
+                                    f"This is closeable with targeted recruitment — a single impact signing in the weakest area of the squad "
+                                    f"(see weaknesses above) could be the difference. Also consider tactical tweaks: "
+                                    f"being more aggressive at home, better set-piece routines, or a plan B for breaking down deep defences."
+                                )
+                            else:
+                                recs.append(
+                                    f"**Title contender.** Just {pts_gap_title:.0f} pts from the historical title average. "
+                                    f"At this level, marginal gains matter most — sports science, squad rotation to avoid injuries, "
+                                    f"and mental resilience in pressure moments. Keeping key players fit and motivated is more important than new signings."
+                                )
                         elif pts_gap_title <= 0:
                             recs.append(
-                                f"{selected_team}'s latest points total ({latest_pts:.0f}) meets or exceeds "
-                                f"the historical title target ({title_target:.0f}). Consistency is key to defending this level."
+                                f"**Maintaining the standard.** {selected_team}'s latest total ({latest_pts:.0f} pts) matches or exceeds "
+                                f"the historical title target ({title_target:.0f}). The priority is squad depth and renewal — "
+                                f"replacing ageing starters before they decline, keeping wage structure sustainable, and avoiding complacency."
                             )
 
-                        if "GA" in multi_season.columns and avg_ga > league_avg_ga_val:
-                            goals_to_save = avg_ga - (league_avg_ga_val * 0.85)
+                        if has_goals and avg_ga > league_avg_ga_val:
+                            extra_goals = avg_ga - league_avg_ga_val
+                            goals_to_elite = avg_ga - champ_avg_ga
+                            pts_from_defense = (extra_goals / games_per_season) * games_per_season * 0.35 * 3 if games_per_season > 0 else 0
                             recs.append(
-                                f"Defensive improvement is a priority. Reducing goals conceded by ~{goals_to_save:.0f}/season "
-                                f"to elite levels would significantly boost points."
+                                f"**Strengthen the defence.** {selected_team} concedes {extra_goals:.0f} more goals/season than average "
+                                f"and {goals_to_elite:.0f} more than champions. Reducing goals conceded could add ~{pts_from_defense:.0f} pts/season. "
+                                f"**How:** Invest in a commanding centre-back who wins aerial duels and organises the back line, "
+                                f"or a defensive midfielder who shields the defence and cuts passing lanes. "
+                                f"If the goalkeeper's save percentage is below par, upgrading there gives immediate improvement. "
+                                f"Tactically, work on pressing triggers so the team wins the ball higher up the pitch."
                             )
 
-                        if "GF" in multi_season.columns and avg_gf < league_avg_gf_val:
-                            goals_to_add = (league_avg_gf_val * 1.15) - avg_gf
+                        if has_goals and avg_gf < league_avg_gf_val:
+                            goals_short = league_avg_gf_val - avg_gf
+                            goals_to_elite = champ_avg_gf - avg_gf
                             recs.append(
-                                f"Attacking output needs improvement. Adding ~{goals_to_add:.0f} goals/season "
-                                f"would bring {selected_team} above the league average."
+                                f"**Boost attacking output.** {selected_team} scores {goals_short:.0f} fewer goals/season than average "
+                                f"and {goals_to_elite:.0f} fewer than champions. "
+                                f"**How:** If the issue is chance creation, recruit a creative midfielder (playmaker) or overlapping "
+                                f"full-backs who provide width and crossing. If the issue is finishing, target a proven goalscorer — "
+                                f"even a 10-goal-a-season striker would close much of this gap. Better set-piece delivery (corners, "
+                                f"free kicks) is one of the most cost-effective ways to add 3–5 goals/season."
                             )
 
-                        if "D" in multi_season.columns and avg_d > league_avg_d * 1.2:
-                            draws_to_convert = (avg_d - league_avg_d) * 0.5
-                            extra_pts = draws_to_convert * 2
+                        if has_wdl and avg_d > league_avg_d * 1.15:
+                            extra_draws = avg_d - league_avg_d
+                            pts_from_draws = extra_draws * 2
+                            half_draws = extra_draws * 0.5
                             recs.append(
-                                f"Converting just {draws_to_convert:.0f} draws per season into wins would add "
-                                f"~{extra_pts:.0f} points — potentially the difference between mid-table and a top-{top_threshold} finish."
+                                f"**Convert draws into wins.** {selected_team} draws {extra_draws:.1f} more games/season than average, "
+                                f"leaving ~{pts_from_draws:.0f} points on the table. Converting just half of those ({half_draws:.0f} games) "
+                                f"would add ~{half_draws * 2:.0f} pts. "
+                                f"**How:** Bring on an impact substitute (a pacy forward or attacking midfielder) in drawn games after 60–65 minutes. "
+                                f"Train for faster transitions to exploit tired defences. Work on attacking dead-ball situations — "
+                                f"late set-piece goals win more tight games than any other approach."
                             )
+
+                        if has_wdl and avg_l > league_avg_l * 1.15:
+                            extra_losses = avg_l - league_avg_l
+                            recs.append(
+                                f"**Reduce heavy defeats.** {selected_team} loses {extra_losses:.1f} more games/season than average. "
+                                f"**How:** Adopt a more pragmatic approach against the top sides — sit deeper, stay compact, "
+                                f"and play on the counter rather than going toe-to-toe. Improve fitness and concentration levels "
+                                f"in the final 15 minutes, where many avoidable goals are conceded. A strong defensive leader "
+                                f"(vocal centre-back or experienced goalkeeper) helps prevent collapses."
+                            )
+
+                        if has_goals and has_wdl and avg_gf > league_avg_gf_val * 1.1 and avg_ga > league_avg_ga_val * 1.1:
+                            recs.append(
+                                f"**Fix the imbalance.** {selected_team} scores well but concedes too much — a 'win big, lose big' profile. "
+                                f"This team doesn't need more attackers; it needs defensive stability. Consider switching from an expansive "
+                                f"formation (e.g. 4-3-3 with high full-backs) to a more balanced shape (e.g. 4-2-3-1 with a double pivot) "
+                                f"that provides cover without sacrificing too much going forward. A ball-playing centre-back "
+                                f"would let the team build from the back safely."
+                            )
+
+                        if len(team_data) >= 3:
+                            recent_3_pts = team_data.tail(3)["Pts"].mean()
+                            if recent_3_pts < avg_pts - 5:
+                                recs.append(
+                                    f"**Arrest the decline.** Recent form ({recent_3_pts:.0f} pts avg over last 3 seasons) is below "
+                                    f"the historical average ({avg_pts:.0f} pts). This may signal a need for a coaching change, "
+                                    f"a squad overhaul, or a rethink of the club's recruitment strategy. "
+                                    f"Identifying whether the issue is tactical, motivational, or related to player quality "
+                                    f"is the first step before spending in the transfer market."
+                                )
 
                         if not recs:
-                            recs.append(f"{selected_team} is performing at or above league benchmarks. Maintain consistency and depth.")
+                            recs.append(
+                                f"**{selected_team} is performing at or above league benchmarks** across all key metrics. "
+                                f"The focus should be on maintaining squad depth, managing player contracts to avoid losing "
+                                f"key assets for free, and incremental improvements through smart recruitment and coaching development."
+                            )
 
                         for i, rec in enumerate(recs, 1):
                             st.markdown(f"{i}. {rec}")
