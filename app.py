@@ -893,6 +893,12 @@ try:
 
         n_rebased = int(multi_season["Rebased"].sum()) if "Rebased" in multi_season.columns else 0
         rebased_seasons = sorted(multi_season.loc[multi_season.get("Rebased", False) == True, "Season"].unique().tolist()) if n_rebased > 0 else []
+        rebased_detail = {}
+        if n_rebased > 0 and "Original_Pld" in multi_season.columns:
+            rb_rows = multi_season[multi_season.get("Rebased", False) == True]
+            for s in rebased_seasons:
+                orig = int(rb_rows.loc[rb_rows["Season"] == s, "Original_Pld"].mode().iloc[0])
+                rebased_detail.setdefault(orig, []).append(s)
         single_rebased = bool(single_season.get("Rebased", pd.Series([False])).any()) if "Rebased" in single_season.columns else False
 
         with tab1:
@@ -941,9 +947,12 @@ try:
             )
             if rebased_seasons:
                 n_rb_seasons = len(set(rebased_seasons))
+                detail_parts = []
+                for orig_pld, seasons in sorted(rebased_detail.items()):
+                    detail_parts.append(f"{len(seasons)} season(s) originally had {orig_pld} games: {', '.join(seasons)}")
+                detail_str = "; ".join(detail_parts) if detail_parts else f"{n_rb_seasons} season(s)"
                 st.caption(
-                    f"Note: {n_rb_seasons} season(s) had a different number of games per team and have been "
-                    f"rebased to the current {league_cfg['games_per_season']}-game standard for fair comparison."
+                    f"Note: {detail_str} — all rebased to the current {league_cfg['games_per_season']}-game standard for fair comparison."
                 )
 
             numeric_vars = ["W", "D", "L", "GF", "GA", "GD", "Pts", "PPG", "Win%", "GF/Game", "GA/Game"]
@@ -1940,9 +1949,12 @@ try:
 
             if rebased_seasons:
                 n_rb_seasons = len(set(rebased_seasons))
+                detail_parts = []
+                for orig_pld, seasons in sorted(rebased_detail.items()):
+                    detail_parts.append(f"{len(seasons)} season(s) originally had {orig_pld} games: {', '.join(seasons)}")
+                detail_str = "; ".join(detail_parts) if detail_parts else f"{n_rb_seasons} season(s)"
                 st.caption(
-                    f"Note: {n_rb_seasons} season(s) had a different number of games per team and have been "
-                    f"rebased to the current {league_cfg['games_per_season']}-game standard for fair comparison."
+                    f"Note: {detail_str} — all rebased to the current {league_cfg['games_per_season']}-game standard for fair comparison."
                 )
 
             if not multi_season.empty and "Squad" in multi_season.columns:
