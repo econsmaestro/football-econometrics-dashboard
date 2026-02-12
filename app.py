@@ -2106,17 +2106,16 @@ try:
 
                             if pen_reliance > 20:
                                 insights.append(
-                                    f"**Heavy penalty reliance** — {pen_reliance:.0f}% of goals come from penalties "
-                                    f"({team_pen_goals} of {team_total_goals}). This is unsustainable and inflates "
-                                    f"the real attacking quality. Open-play goal creation (better crossing, through-balls, "
-                                    f"movement in the box) needs improvement to avoid points dropping when penalty decisions "
-                                    f"don't go the team's way."
+                                    f"**Strong penalty-area threat** — {pen_reliance:.0f}% of goals come from penalties "
+                                    f"({team_pen_goals} of {team_total_goals}). This shows the team is dangerous in the box "
+                                    f"and forces opponents into fouls. To build on this, adding more open-play goal routes "
+                                    f"(better crossing, through-balls, movement in the box) would make the attack even harder to defend against."
                                 )
                             elif pen_reliance < 5 and team_total_goals > 20:
                                 insights.append(
-                                    f"**Self-sufficient attack** — only {pen_reliance:.0f}% of goals from penalties. "
+                                    f"**Diverse attack** — only {pen_reliance:.0f}% of goals from penalties. "
                                     f"The vast majority of output comes from open play and set-piece routines, "
-                                    f"which is more reliable and sustainable long-term."
+                                    f"showing strong creative quality across the squad."
                                 )
 
                             position_goals = {}
