@@ -271,6 +271,50 @@ def load_multi_season_penalties(start_year, end_year):
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
+def load_alltime_taker_penalties():
+    taker_frames = []
+    for yr in range(1992, CURRENT_SEASON_END + 1):
+        try:
+            t = scrape_penalty_takers(yr)
+            if not t.empty:
+                t["Season"] = f"{yr}-{str(yr+1)[2:]}"
+                taker_frames.append(t)
+        except Exception:
+            pass
+
+    if not taker_frames:
+        return pd.DataFrame()
+
+    all_takers = pd.concat(taker_frames, ignore_index=True)
+
+    per_club = all_takers.groupby(["Player", "Club"]).agg(
+        Penalties=("Penalties", "sum"),
+        Scored=("Scored", "sum"),
+        Missed=("Missed", "sum"),
+    ).reset_index()
+    clubs_list = per_club.groupby("Player")["Club"].apply(
+        lambda x: ", ".join(sorted(c for c in x.unique() if c))
+    ).reset_index()
+    clubs_list.columns = ["Player", "Clubs"]
+
+    agg = all_takers.groupby("Player").agg(
+        Penalties=("Penalties", "sum"),
+        Scored=("Scored", "sum"),
+        Missed=("Missed", "sum"),
+        Seasons=("Season", lambda x: len(x.unique())),
+        First_Season=("Season", "min"),
+        Last_Season=("Season", "max"),
+    ).reset_index()
+    agg = agg.merge(clubs_list, on="Player", how="left")
+    agg["Conversion %"] = np.where(agg["Penalties"] > 0, (agg["Scored"] / agg["Penalties"] * 100).round(1), 0.0)
+    agg = agg[agg["Player"].str.strip().astype(bool)]
+    agg = agg[agg["Penalties"] > 0]
+    agg = agg[["Player", "Clubs", "Seasons", "First_Season", "Last_Season",
+               "Penalties", "Scored", "Missed", "Conversion %"]]
+    return agg
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
 def load_alltime_gk_penalties():
     gk_frames = []
     for yr in range(1992, CURRENT_SEASON_END + 1):
@@ -806,31 +850,24 @@ try:
     with tab5:
         st.subheader("Penalty Analysis & Save Predictor")
         st.markdown(
-            "Penalty statistics scraped from Transfermarkt for current Premier League players. "
-            "Use the predictor to estimate the probability of a goalkeeper saving a penalty from a specific taker."
+            "Penalty statistics scraped from Transfermarkt covering every player and goalkeeper "
+            "to have taken or faced a penalty in the Premier League since 1992. "
+            "Use the predictor below to estimate the probability of a goalkeeper saving a penalty from a specific taker."
         )
-
-        pen_season_options = list(range(max(2020, season_range[0]), CURRENT_SEASON_END + 1))
-        pen_col1, pen_col2 = st.columns(2)
-        with pen_col1:
-            pen_start = st.selectbox("Penalty data from season", pen_season_options, index=0, key="pen_start")
-        with pen_col2:
-            pen_end = st.selectbox("To season", pen_season_options, index=len(pen_season_options) - 1, key="pen_end")
-
-        with st.spinner("Fetching penalty data from Transfermarkt..."):
-            agg_takers, agg_gks = load_multi_season_penalties(pen_start, pen_end)
 
         SAVED_SHARE_OF_MISSES = 0.57
         OFF_TARGET_SHARE_OF_MISSES = 0.43
 
-        if not agg_takers.empty:
-            st.subheader("Penalty Takers")
-            st.markdown(
-                f"**{len(agg_takers)} players** with penalty records across the selected seasons. "
-                "Use the search box to find a specific taker."
-            )
+        st.subheader("Penalty Takers (All-Time Premier League Era)")
+        st.markdown(
+            "Every player who has taken a penalty in the Premier League since 1992 — "
+            "including goalkeepers and defenders. Use the search box to find a specific player."
+        )
+        with st.spinner("Loading all-time penalty taker records (1992-present)..."):
+            alltime_takers = load_alltime_taker_penalties()
 
-            takers_full = agg_takers.copy()
+        if not alltime_takers.empty:
+            takers_full = alltime_takers.copy()
             takers_full["Est. Saved"] = (takers_full["Missed"] * SAVED_SHARE_OF_MISSES).round(0).astype(int)
             takers_full["Est. Off Target"] = takers_full["Missed"] - takers_full["Est. Saved"]
             takers_full["Saved %"] = np.where(
@@ -846,7 +883,7 @@ try:
 
             @st.fragment
             def taker_search_fragment():
-                taker_search = st.text_input("Search for a penalty taker", "", key="taker_search", placeholder="e.g. Salah, Haaland, Fernandes...")
+                taker_search = st.text_input("Search for a penalty taker", "", key="taker_search", placeholder="e.g. Shearer, Lampard, Salah, Van Dijk...")
                 takers_sorted = takers_full.sort_values("Penalties", ascending=False).reset_index(drop=True)
                 if taker_search.strip():
                     search_term = taker_search.strip().lower()
@@ -862,6 +899,8 @@ try:
                 "league-wide research (roughly 57% of missed penalties are saved by the goalkeeper, "
                 "43% miss the target entirely including hitting the woodwork)."
             )
+        else:
+            st.warning("Could not load penalty taker records.")
 
         st.divider()
         st.subheader("Goalkeeper Penalty Records (All-Time Premier League Era)")
@@ -969,24 +1008,22 @@ try:
         league_avg_conversion = 77.0
         league_avg_save = 17.0
 
-        predictor_gk_data = alltime_gks if not alltime_gks.empty else agg_gks
-        has_predictor_data = not agg_takers.empty and not predictor_gk_data.empty
+        has_predictor_data = not alltime_takers.empty and not alltime_gks.empty
         if has_predictor_data:
-            gk_name_col = "Goalkeeper"
-            taker_list = agg_takers.sort_values("Penalties", ascending=False)["Player"].tolist()
-            gk_list = predictor_gk_data.sort_values("Faced", ascending=False)[gk_name_col].tolist()
+            taker_list = alltime_takers.sort_values("Penalties", ascending=False)["Player"].tolist()
+            gk_list = alltime_gks.sort_values("Faced", ascending=False)["Goalkeeper"].tolist()
 
             @st.fragment
             def predictor_fragment():
                 st.markdown("Select a taker and goalkeeper below — click the dropdown and **type to search** by name.")
                 pred_col1, pred_col2 = st.columns(2)
                 with pred_col1:
-                    selected_taker = st.selectbox("Penalty Taker", taker_list, key="pen_taker")
+                    selected_taker = st.selectbox("Penalty Taker (all-time PL era)", taker_list, key="pen_taker")
                 with pred_col2:
                     selected_gk = st.selectbox("Goalkeeper (all-time PL era)", gk_list, key="pen_gk")
 
-                taker_row = agg_takers[agg_takers["Player"] == selected_taker].iloc[0]
-                gk_row = predictor_gk_data[predictor_gk_data[gk_name_col] == selected_gk].iloc[0]
+                taker_row = alltime_takers[alltime_takers["Player"] == selected_taker].iloc[0]
+                gk_row = alltime_gks[alltime_gks["Goalkeeper"] == selected_gk].iloc[0]
 
                 taker_conv = taker_row["Conversion %"]
                 taker_pens = taker_row["Penalties"]
@@ -1009,7 +1046,8 @@ try:
                 p_save /= total
                 p_miss /= total
 
-                st.markdown(f"**{selected_taker}** ({taker_row['Club']}) vs **{selected_gk}** ({gk_club_display})")
+                taker_club_display = taker_row.get("Clubs", taker_row.get("Club", ""))
+                st.markdown(f"**{selected_taker}** ({taker_club_display}) vs **{selected_gk}** ({gk_club_display})")
 
                 res_col1, res_col2, res_col3 = st.columns(3)
                 res_col1.metric("Goal Probability", f"{p_goal * 100:.1f}%")
@@ -1195,12 +1233,10 @@ try:
                     )
 
             predictor_fragment()
-        elif agg_takers.empty and predictor_gk_data.empty:
-            st.warning("No penalty data could be loaded. Try adjusting the season range.")
         else:
-            if agg_takers.empty:
+            if alltime_takers.empty:
                 st.warning("Penalty taker data could not be loaded.")
-            if predictor_gk_data.empty:
+            if alltime_gks.empty:
                 st.warning("Goalkeeper save data could not be loaded.")
 
         st.divider()
