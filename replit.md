@@ -2,7 +2,7 @@
 
 ## Overview
 
-A reproducible football analytics/econometrics study built with Streamlit that shows what statistically matters for success in the English Premier League. The app covers all Premier League seasons from 1992-93 through the current season (auto-detected), offering league tables, statistical analysis (OLS regression, correlation matrices), interactive visualizations, a points predictor, and a penalty analysis system with goalkeeper positioning advice.
+A reproducible football analytics/econometrics study built with Streamlit that shows what statistically matters for success across 23 football leagues worldwide. The app supports split-season (e.g. Premier League, La Liga) and calendar-season (e.g. MLS, J1 League) formats, offering league tables, statistical analysis (OLS regression, correlation matrices), interactive visualizations, a points predictor, and a penalty analysis system with game-theory adjustments and goalkeeper positioning advice.
 
 ## User Preferences
 
@@ -10,9 +10,10 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
-- **2026-02-12**: Added Penalty Analysis tab (tab 5) with Transfermarkt scraping for penalty taker/goalkeeper stats, shot placement zone visualization, Bayesian prediction model, and goalkeeper diving advice.
-- **2026-02-12**: Expanded from simple league table to full econometrics dashboard with 4 tabs (League Table, Statistical Analysis, Visualizations, Predictions & Insights). Added multi-season data loading, OLS regression models, correlation analysis, scatter/box/bar plots, and a points predictor with confidence intervals.
-- **2026-02-12**: Switched data source from FBRef (blocked with 403) to Wikipedia Premier League season articles.
+- **2026-02-12**: Expanded to 23 leagues with all-time penalty taker/GK records (1992-present for each league). Added game-theory adjusted penalty analysis, dynamic tier binning, URL-encoded Wikipedia names for non-ASCII leagues. Champions League shows penalty-only tab; leagues without GK data gracefully disable predictor.
+- **2026-02-12**: Added Penalty Analysis tab (tab 5) with Transfermarkt scraping for penalty taker/goalkeeper stats, shot placement zone visualization, Bayesian prediction model, game-theory strategic adjustment, and goalkeeper diving advice (all from GK's perspective).
+- **2026-02-12**: Expanded from simple league table to full econometrics dashboard with 5 tabs. Added multi-season data loading, OLS regression models (full history + recent era), correlation analysis, scatter/box/bar plots, points predictor with confidence intervals.
+- **2026-02-12**: Switched data source from FBRef (blocked with 403) to Wikipedia season articles.
 
 ## System Architecture
 
@@ -20,26 +21,42 @@ Preferred communication style: Simple, everyday language.
 - **Framework**: Streamlit with wide layout
 - **Entry point**: `app.py` — run with `streamlit run app.py --server.port 5000`
 - **Tabs**: League Table, Statistical Analysis, Visualizations, Predictions & Insights, Penalty Analysis
-- **Sidebar**: Season selector (1992-current), season range slider for multi-season analysis
+- **Sidebar**: League selector (23 leagues), season selector (adapts per league type), season range slider for multi-season analysis
+
+### League Configuration
+- **LEAGUE_CONFIG**: Dictionary mapping league names to parameters:
+  - `tm_slug`, `tm_code`: Transfermarkt URL components
+  - `wiki_pattern`: "split" or "calendar" (or None for Champions League)
+  - `wiki_name`: Wikipedia article suffix (URL-encoded for non-ASCII)
+  - `start_year`, `teams`, `games_per_season`: League-specific parameters
+  - `has_gk_data`: Whether Transfermarkt GK penalty data is available
+  - `season_type`: "split" (2023-24) or "calendar" (2024)
+
+### Supported Leagues
+- **Europe**: Premier League, La Liga, Ligue 1, Bundesliga, Serie A, Eredivisie, Scottish Premiership, Champions League
+- **Middle East**: Saudi Pro League
+- **Asia**: Indian Super League, J1 League, K League 1, Singapore Premier League
+- **Americas**: MLS, Argentine Primera División, Brasileirão Série A, Liga BetPlay (Colombia), Chilean/Uruguayan/Paraguayan/Peruvian/Bolivian/Venezuelan Primera División
 
 ### Data Layer
-- **League data source**: Wikipedia Premier League season articles (e.g., `https://en.wikipedia.org/wiki/2023–24_Premier_League`)
-- **Penalty data source**: Transfermarkt penalty taker + goalkeeper save pages
+- **League data source**: Wikipedia season articles (split-season: `{start}–{suffix}_{League}`, calendar-season: `{year}_{League}`)
+- **Penalty data source**: Transfermarkt penalty taker + goalkeeper save pages (per-league)
+- **All-time records**: Scraped from each league's founding year to present
 - **Scraping**: `requests` + `pandas.read_html()` for Wikipedia; `requests` + `BeautifulSoup` for Transfermarkt
-- **Caching**: `@st.cache_data` with 1-hour TTL
-- **Variables extracted**: Pos, Squad, Pld, W, D, L, GF, GA, GD, Pts
-- **Derived metrics**: PPG (points per game), Win%, GF/Game, GA/Game
+- **Caching**: `@st.cache_data` with 1-hour TTL, keyed per league
+- **Column detection**: Flexible parsing handles Team/Teamvte/Club/Clubvte/Squad and Pld/MP/P column names
 
 ### Analytics
 - **Correlation matrix**: Heatmap of all numeric variables
-- **OLS Regression**: Two models — Pts ~ GF + GA, and Pts ~ W + D + L (via statsmodels)
-- **Visualizations**: Plotly scatter plots with trendlines, bar charts, box plots, line charts
+- **OLS Regression**: Three models — Pts ~ GF + GA (full history), Pts ~ GF + GA (recent 5 seasons), Pts ~ W + D + L
+- **Visualizations**: Plotly scatter plots with trendlines, bar charts, box plots (dynamic tier bins), line charts
 - **Predictor**: Regression-based points prediction with 95% confidence intervals
 - **Penalty predictor**: Bayesian shrinkage model combining taker conversion + GK save rate + league averages
+- **Game-theory adjustment**: Strategic shift analysis accounting for how takers adapt shot placement based on GK reputation
 - **Shot placement zones**: 8-zone goal visualization with taker % and GK save % per zone (from research data)
 
 ### File Structure
-- `app.py` — Main Streamlit application (scraping, analysis, UI)
+- `app.py` — Main Streamlit application (config, scraping, analysis, UI)
 - `main.py` — Placeholder (not used)
 - `.streamlit/config.toml` — Streamlit server config (port 5000, headless)
 
@@ -56,8 +73,8 @@ Preferred communication style: Simple, everyday language.
 - **beautifulsoup4**, **lxml**, **html5lib** — HTML parsing support
 
 ### External Services
-- **Wikipedia** — Primary data source for Premier League standings by season
-- **Transfermarkt** — Penalty taker and goalkeeper save statistics
+- **Wikipedia** — Primary data source for league standings by season (all supported leagues)
+- **Transfermarkt** — Penalty taker and goalkeeper save statistics (per-league)
 
 ### No Database
 - All data is fetched on-demand and cached in memory.
