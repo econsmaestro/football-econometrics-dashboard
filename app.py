@@ -174,19 +174,49 @@ try:
         corr_data = multi_season[available_vars].dropna()
 
         st.subheader("Correlation Matrix")
+        st.markdown(
+            "The correlation matrix shows how strongly each pair of stats moves together. "
+            "Values range from **-1** (when one goes up, the other goes down) to **+1** "
+            "(both move in the same direction). Values near **0** mean little relationship."
+        )
         corr_matrix = corr_data.corr()
         fig_corr = px.imshow(
             corr_matrix,
+            x=corr_matrix.columns,
+            y=corr_matrix.columns,
             text_auto=".2f",
             color_continuous_scale="RdBu_r",
             zmin=-1, zmax=1,
-            aspect="auto",
+            aspect="equal",
         )
-        fig_corr.update_layout(height=500)
+        fig_corr.update_layout(
+            height=600,
+            xaxis=dict(tickangle=-45, tickfont=dict(size=12)),
+            yaxis=dict(tickfont=dict(size=12)),
+            margin=dict(l=100, r=20, t=20, b=100),
+        )
+        fig_corr.update_traces(
+            textfont=dict(size=11),
+        )
         st.plotly_chart(fig_corr, use_container_width=True)
 
-        st.subheader("OLS Regression: Points as Dependent Variable")
-        st.markdown("Estimating: **Pts = β₀ + β₁·GF + β₂·GA + ε**")
+        st.markdown("**Key abbreviations:** W = Wins, D = Draws, L = Losses, "
+                     "GF = Goals For (scored), GA = Goals Against (conceded), "
+                     "GD = Goal Difference (GF minus GA), Pts = Points, "
+                     "PPG = Points Per Game, Win% = Win Percentage, "
+                     "GF/Game = Goals scored per match, GA/Game = Goals conceded per match.")
+
+        st.divider()
+        st.subheader("OLS Regression: What Predicts League Points?")
+        st.markdown(
+            "**What is OLS Regression?** It's a statistical method that finds the best-fit "
+            "formula to predict one thing (Points) from other things (Goals Scored, Goals Conceded). "
+            "Think of it like finding the recipe: how much does each ingredient contribute to the final result?"
+        )
+        st.markdown(
+            "**Model 1:** We predict a team's **Points** using their **Goals Scored (GF)** "
+            "and **Goals Conceded (GA)**."
+        )
 
         if "GF" in multi_season.columns and "GA" in multi_season.columns:
             reg_data = multi_season[["Pts", "GF", "GA"]].dropna()
@@ -199,26 +229,47 @@ try:
             col_r2.metric("Adj. R-squared", f"{model.rsquared_adj:.4f}")
             col_r3.metric("F-statistic", f"{model.fvalue:.2f}")
 
-            st.markdown("**Coefficient Estimates**")
+            with st.expander("What do these numbers mean?", expanded=False):
+                st.markdown(
+                    "- **R-squared**: How much of the variation in Points is explained by the model. "
+                    "1.0 = perfect, 0.0 = explains nothing.\n"
+                    "- **Adj. R-squared**: Same as R-squared but adjusted for the number of variables used.\n"
+                    "- **F-statistic**: Tests whether the model overall is meaningful. Higher = stronger evidence."
+                )
+
+            st.markdown("**How much does each factor contribute?**")
             coef_df = pd.DataFrame({
-                "Variable": model.params.index,
-                "Coefficient": model.params.values.round(4),
+                "Factor": ["Baseline (starting points)", "Goals Scored (GF)", "Goals Conceded (GA)"],
+                "Effect on Points": model.params.values.round(4),
                 "Std. Error": model.bse.values.round(4),
-                "t-value": model.tvalues.values.round(4),
-                "p-value": model.pvalues.values.round(6),
+                "Confidence (t-value)": model.tvalues.values.round(4),
+                "Significance (p-value)": model.pvalues.values.round(6),
             })
-            st.dataframe(coef_df.set_index("Variable"), use_container_width=True)
+            st.dataframe(coef_df.set_index("Factor"), use_container_width=True)
+
+            with st.expander("How to read this table", expanded=False):
+                st.markdown(
+                    "- **Effect on Points**: How many points a team gains (or loses) for each additional goal. "
+                    "A positive number means more of that stat = more points.\n"
+                    "- **Std. Error**: How precise the estimate is (smaller = more precise).\n"
+                    "- **Confidence (t-value)**: How confident we are. Values above 2 (or below -2) are generally reliable.\n"
+                    "- **Significance (p-value)**: Probability the result is due to chance. Below 0.05 = statistically significant."
+                )
 
             st.markdown(
-                f"**Interpretation:** Each additional goal scored is associated with "
+                f"**In plain English:** Each additional goal scored is associated with "
                 f"**{model.params['GF']:.3f}** more points, while each additional goal "
                 f"conceded is associated with **{model.params['GA']:.3f}** points "
                 f"(holding the other constant). The model explains **{model.rsquared * 100:.1f}%** "
-                f"of the variance in league points."
+                f"of the variation in league points."
             )
 
         st.divider()
-        st.subheader("Extended Model: Pts = β₀ + β₁·W + β₂·D + β₃·L + ε")
+        st.subheader("Model 2: Points from Match Results")
+        st.markdown(
+            "**Model 2:** We predict **Points** using **Wins (W)**, **Draws (D)**, and **Losses (L)** "
+            "— the direct match outcomes."
+        )
 
         if "W" in multi_season.columns and "D" in multi_season.columns and "L" in multi_season.columns:
             reg_data2 = multi_season[["Pts", "W", "D", "L"]].dropna()
@@ -232,19 +283,19 @@ try:
             col_e3.metric("F-statistic", f"{model2.fvalue:.2f}")
 
             coef_df2 = pd.DataFrame({
-                "Variable": model2.params.index,
-                "Coefficient": model2.params.values.round(4),
+                "Factor": ["Baseline", "Wins (W)", "Draws (D)", "Losses (L)"],
+                "Effect on Points": model2.params.values.round(4),
                 "Std. Error": model2.bse.values.round(4),
-                "t-value": model2.tvalues.values.round(4),
-                "p-value": model2.pvalues.values.round(6),
+                "Confidence (t-value)": model2.tvalues.values.round(4),
+                "Significance (p-value)": model2.pvalues.values.round(6),
             })
-            st.dataframe(coef_df2.set_index("Variable"), use_container_width=True)
+            st.dataframe(coef_df2.set_index("Factor"), use_container_width=True)
 
             st.markdown(
-                f"**Interpretation:** As expected, wins contribute ~3 points each "
-                f"(coefficient ≈ {model2.params['W']:.2f}) and draws ~1 point "
-                f"(coefficient ≈ {model2.params['D']:.2f}). This near-perfect R² "
-                f"({model2.rsquared:.4f}) reflects the deterministic points system."
+                f"**In plain English:** As expected, each win contributes ~3 points "
+                f"(coefficient = {model2.params['W']:.2f}) and each draw ~1 point "
+                f"(coefficient = {model2.params['D']:.2f}). The near-perfect R-squared "
+                f"({model2.rsquared:.4f}) confirms this — points are directly determined by results."
             )
 
     with tab3:
