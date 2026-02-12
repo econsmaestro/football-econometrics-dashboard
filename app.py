@@ -853,14 +853,17 @@ try:
             alltime_gks = load_alltime_gk_penalties()
 
         if not alltime_gks.empty:
-            gk_search = st.text_input("Search for a goalkeeper", "", key="gk_search", placeholder="e.g. Schmeichel, De Gea, Alisson...")
-            gks_sorted = alltime_gks.sort_values("Goalkeeper", ascending=True).reset_index(drop=True)
-            if gk_search.strip():
-                search_term = gk_search.strip().lower()
-                gks_sorted = gks_sorted[gks_sorted["Goalkeeper"].str.lower().str.contains(search_term, na=False)]
-            gks_sorted.index += 1
-            st.markdown(f"**{len(gks_sorted)} goalkeeper{'s' if len(gks_sorted) != 1 else ''}** found.")
-            st.dataframe(gks_sorted, use_container_width=True, height=500)
+            @st.fragment
+            def gk_search_fragment():
+                gk_search = st.text_input("Search for a goalkeeper", "", key="gk_search", placeholder="e.g. Schmeichel, De Gea, Alisson...")
+                gks_sorted = alltime_gks.sort_values("Goalkeeper", ascending=True).reset_index(drop=True)
+                if gk_search.strip():
+                    search_term = gk_search.strip().lower()
+                    gks_sorted = gks_sorted[gks_sorted["Goalkeeper"].str.lower().str.contains(search_term, na=False)]
+                gks_sorted.index += 1
+                st.markdown(f"**{len(gks_sorted)} goalkeeper{'s' if len(gks_sorted) != 1 else ''}** found.")
+                st.dataframe(gks_sorted, use_container_width=True, height=500)
+            gk_search_fragment()
         else:
             st.warning("Could not load goalkeeper penalty records.")
 
@@ -952,119 +955,120 @@ try:
             taker_list = agg_takers.sort_values("Penalties", ascending=False)["Player"].tolist()
             gk_list = predictor_gk_data.sort_values("Faced", ascending=False)[gk_name_col].tolist()
 
-            with st.form("penalty_predictor_form"):
-                form_col1, form_col2, form_col3 = st.columns([2, 2, 1])
-                with form_col1:
+            @st.fragment
+            def predictor_fragment():
+                st.markdown("Select a taker and goalkeeper below — click the dropdown and **type to search** by name.")
+                pred_col1, pred_col2 = st.columns(2)
+                with pred_col1:
                     selected_taker = st.selectbox("Penalty Taker", taker_list, key="pen_taker")
-                with form_col2:
+                with pred_col2:
                     selected_gk = st.selectbox("Goalkeeper (all-time PL era)", gk_list, key="pen_gk")
-                with form_col3:
-                    st.markdown("<br>", unsafe_allow_html=True)
-                    predict_clicked = st.form_submit_button("Predict", use_container_width=True, type="primary")
 
-            taker_row = agg_takers[agg_takers["Player"] == selected_taker].iloc[0]
-            gk_row = predictor_gk_data[predictor_gk_data[gk_name_col] == selected_gk].iloc[0]
+                taker_row = agg_takers[agg_takers["Player"] == selected_taker].iloc[0]
+                gk_row = predictor_gk_data[predictor_gk_data[gk_name_col] == selected_gk].iloc[0]
 
-            taker_conv = taker_row["Conversion %"]
-            taker_pens = taker_row["Penalties"]
-            gk_save_rate = gk_row["Save %"]
-            gk_faced = gk_row["Faced"]
-            gk_club_display = gk_row.get("Clubs", gk_row.get("Club", ""))
+                taker_conv = taker_row["Conversion %"]
+                taker_pens = taker_row["Penalties"]
+                gk_save_rate = gk_row["Save %"]
+                gk_faced = gk_row["Faced"]
+                gk_club_display = gk_row.get("Clubs", gk_row.get("Club", ""))
 
-            taker_weight = min(taker_pens / 10.0, 1.0)
-            gk_weight = min(gk_faced / 10.0, 1.0)
+                taker_weight = min(taker_pens / 10.0, 1.0)
+                gk_weight = min(gk_faced / 10.0, 1.0)
 
-            weighted_taker_conv = taker_weight * taker_conv + (1 - taker_weight) * league_avg_conversion
-            weighted_gk_save = gk_weight * gk_save_rate + (1 - gk_weight) * league_avg_save
+                weighted_taker_conv = taker_weight * taker_conv + (1 - taker_weight) * league_avg_conversion
+                weighted_gk_save = gk_weight * gk_save_rate + (1 - gk_weight) * league_avg_save
 
-            p_goal = (weighted_taker_conv / 100) * (1 - weighted_gk_save / 200)
-            p_save = (weighted_gk_save / 100) * (1 - weighted_taker_conv / 200)
-            p_miss = max(0, 1 - p_goal - p_save)
+                p_goal = (weighted_taker_conv / 100) * (1 - weighted_gk_save / 200)
+                p_save = (weighted_gk_save / 100) * (1 - weighted_taker_conv / 200)
+                p_miss = max(0, 1 - p_goal - p_save)
 
-            total = p_goal + p_save + p_miss
-            p_goal /= total
-            p_save /= total
-            p_miss /= total
+                total = p_goal + p_save + p_miss
+                p_goal /= total
+                p_save /= total
+                p_miss /= total
 
-            st.markdown(f"**{selected_taker}** ({taker_row['Club']}) vs **{selected_gk}** ({gk_club_display})")
+                st.markdown(f"**{selected_taker}** ({taker_row['Club']}) vs **{selected_gk}** ({gk_club_display})")
 
-            res_col1, res_col2, res_col3 = st.columns(3)
-            res_col1.metric("Goal Probability", f"{p_goal * 100:.1f}%")
-            res_col2.metric("Save Probability", f"{p_save * 100:.1f}%")
-            res_col3.metric("Miss Probability", f"{p_miss * 100:.1f}%")
+                res_col1, res_col2, res_col3 = st.columns(3)
+                res_col1.metric("Goal Probability", f"{p_goal * 100:.1f}%")
+                res_col2.metric("Save Probability", f"{p_save * 100:.1f}%")
+                res_col3.metric("Miss Probability", f"{p_miss * 100:.1f}%")
 
-            st.markdown("**Taker Profile**")
-            taker_missed = int(taker_row["Missed"])
-            taker_est_saved = round(taker_missed * SAVED_SHARE_OF_MISSES)
-            taker_est_off_target = taker_missed - taker_est_saved
-            saved_pct = (taker_est_saved / taker_pens * 100) if taker_pens > 0 else 0
-            off_target_pct = (taker_est_off_target / taker_pens * 100) if taker_pens > 0 else 0
+                st.markdown("**Taker Profile**")
+                taker_missed = int(taker_row["Missed"])
+                taker_est_saved = round(taker_missed * SAVED_SHARE_OF_MISSES)
+                taker_est_off_target = taker_missed - taker_est_saved
+                saved_pct = (taker_est_saved / taker_pens * 100) if taker_pens > 0 else 0
+                off_target_pct = (taker_est_off_target / taker_pens * 100) if taker_pens > 0 else 0
 
-            t_col1, t_col2, t_col3 = st.columns(3)
-            t_col1.metric("Penalties Taken", int(taker_pens))
-            t_col2.metric("Scored", int(taker_row["Scored"]))
-            t_col3.metric("Conversion Rate", f"{taker_conv:.1f}%")
+                t_col1, t_col2, t_col3 = st.columns(3)
+                t_col1.metric("Penalties Taken", int(taker_pens))
+                t_col2.metric("Scored", int(taker_row["Scored"]))
+                t_col3.metric("Conversion Rate", f"{taker_conv:.1f}%")
 
-            t_col4, t_col5, t_col6 = st.columns(3)
-            t_col4.metric("Not Scored", taker_missed)
-            t_col5.metric("Est. Saved by GK", f"{taker_est_saved} ({saved_pct:.0f}%)")
-            t_col6.metric("Est. Off Target", f"{taker_est_off_target} ({off_target_pct:.0f}%)")
+                t_col4, t_col5, t_col6 = st.columns(3)
+                t_col4.metric("Not Scored", taker_missed)
+                t_col5.metric("Est. Saved by GK", f"{taker_est_saved} ({saved_pct:.0f}%)")
+                t_col6.metric("Est. Off Target", f"{taker_est_off_target} ({off_target_pct:.0f}%)")
 
-            st.markdown("**Goalkeeper Profile**")
-            g_col1, g_col2, g_col3 = st.columns(3)
-            g_col1.metric("Penalties Faced", int(gk_faced))
-            g_col2.metric("Saved", int(gk_row["Saved"]))
-            g_col3.metric("Save Rate", f"{gk_save_rate:.1f}%")
+                st.markdown("**Goalkeeper Profile**")
+                g_col1, g_col2, g_col3 = st.columns(3)
+                g_col1.metric("Penalties Faced", int(gk_faced))
+                g_col2.metric("Saved", int(gk_row["Saved"]))
+                g_col3.metric("Save Rate", f"{gk_save_rate:.1f}%")
 
-            with st.expander("How the prediction model works", expanded=False):
-                st.markdown(
-                    "The model combines three data sources:\n\n"
-                    "1. **Taker's conversion rate** — weighted by sample size. "
-                    f"With {int(taker_pens)} penalties on record, the taker's stats are weighted "
-                    f"at {taker_weight * 100:.0f}% vs the league average ({league_avg_conversion}%).\n\n"
-                    "2. **Goalkeeper's save rate** — similarly weighted by number of penalties faced. "
-                    f"With {int(gk_faced)} penalties faced, the keeper's stats are weighted "
-                    f"at {gk_weight * 100:.0f}% vs the league average ({league_avg_save}%).\n\n"
-                    "3. **Bayesian shrinkage** — players with fewer penalties are regressed toward "
-                    "league averages to avoid overreacting to small samples. For example, a player "
-                    "who scored 1 out of 1 (100%) is not truly a 100% converter."
+                with st.expander("How the prediction model works", expanded=False):
+                    st.markdown(
+                        "The model combines three data sources:\n\n"
+                        "1. **Taker's conversion rate** — weighted by sample size. "
+                        f"With {int(taker_pens)} penalties on record, the taker's stats are weighted "
+                        f"at {taker_weight * 100:.0f}% vs the league average ({league_avg_conversion}%).\n\n"
+                        "2. **Goalkeeper's save rate** — similarly weighted by number of penalties faced. "
+                        f"With {int(gk_faced)} penalties faced, the keeper's stats are weighted "
+                        f"at {gk_weight * 100:.0f}% vs the league average ({league_avg_save}%).\n\n"
+                        "3. **Bayesian shrinkage** — players with fewer penalties are regressed toward "
+                        "league averages to avoid overreacting to small samples. For example, a player "
+                        "who scored 1 out of 1 (100%) is not truly a 100% converter."
+                    )
+                    st.latex(r"P(\text{goal}) = \text{Weighted Conversion} \times \left(1 - \frac{\text{Weighted Save Rate}}{2}\right)")
+                    st.latex(r"P(\text{save}) = \text{Weighted Save Rate} \times \left(1 - \frac{\text{Weighted Conversion}}{2}\right)")
+                    st.markdown("Probabilities are then normalised to sum to 100%.")
+
+                st.divider()
+                st.subheader("Goalkeeper Advice: Where to Dive")
+                st.info(
+                    "**Reminder: All directions below are from YOUR perspective as the goalkeeper** "
+                    "(facing the penalty taker). \"Left\" = dive to your left, \"Right\" = dive to your right."
                 )
-                st.latex(r"P(\text{goal}) = \text{Weighted Conversion} \times \left(1 - \frac{\text{Weighted Save Rate}}{2}\right)")
-                st.latex(r"P(\text{save}) = \text{Weighted Save Rate} \times \left(1 - \frac{\text{Weighted Conversion}}{2}\right)")
-                st.markdown("Probabilities are then normalised to sum to 100%.")
+                st.markdown(
+                    f"Based on league-wide shot placement data, here is where **{selected_gk}** "
+                    f"should dive against **{selected_taker}** to maximise the chance of a save:"
+                )
 
-            st.divider()
-            st.subheader("Goalkeeper Advice: Where to Dive")
-            st.info(
-                "**Reminder: All directions below are from YOUR perspective as the goalkeeper** "
-                "(facing the penalty taker). \"Left\" = dive to your left, \"Right\" = dive to your right."
-            )
-            st.markdown(
-                f"Based on league-wide shot placement data, here is where **{selected_gk}** "
-                f"should dive against **{selected_taker}** to maximise the chance of a save:"
-            )
+                advice_data = []
+                for zone, probs in ZONE_PROBS.items():
+                    expected_saves = probs["Taker %"] * probs["GK Save %"] / 100
+                    advice_data.append({
+                        "Zone": zone,
+                        "Taker Aims Here %": probs["Taker %"],
+                        "GK Save Rate in Zone %": probs["GK Save %"],
+                        "Expected Save Value": round(expected_saves, 2),
+                    })
+                advice_df = pd.DataFrame(advice_data).sort_values("Expected Save Value", ascending=False)
+                advice_df.index = range(1, len(advice_df) + 1)
+                st.dataframe(advice_df, use_container_width=True)
 
-            advice_data = []
-            for zone, probs in ZONE_PROBS.items():
-                expected_saves = probs["Taker %"] * probs["GK Save %"] / 100
-                advice_data.append({
-                    "Zone": zone,
-                    "Taker Aims Here %": probs["Taker %"],
-                    "GK Save Rate in Zone %": probs["GK Save %"],
-                    "Expected Save Value": round(expected_saves, 2),
-                })
-            advice_df = pd.DataFrame(advice_data).sort_values("Expected Save Value", ascending=False)
-            advice_df.index = range(1, len(advice_df) + 1)
-            st.dataframe(advice_df, use_container_width=True)
+                best_zone = advice_df.iloc[0]["Zone"]
+                best_value = advice_df.iloc[0]["Expected Save Value"]
+                st.success(
+                    f"**Recommendation:** Dive to **your {best_zone.lower()}** (expected save value: {best_value:.2f}). "
+                    f"This zone combines a high likelihood of the taker aiming there with a reasonable save probability. "
+                    f"Remember: this is YOUR left/right as the goalkeeper facing the striker. "
+                    f"The top corners have the lowest save rates (<6%) — if the taker goes there, it's very hard to stop."
+                )
 
-            best_zone = advice_df.iloc[0]["Zone"]
-            best_value = advice_df.iloc[0]["Expected Save Value"]
-            st.success(
-                f"**Recommendation:** Dive to **your {best_zone.lower()}** (expected save value: {best_value:.2f}). "
-                f"This zone combines a high likelihood of the taker aiming there with a reasonable save probability. "
-                f"Remember: this is YOUR left/right as the goalkeeper facing the striker. "
-                f"The top corners have the lowest save rates (<6%) — if the taker goes there, it's very hard to stop."
-            )
+            predictor_fragment()
         elif agg_takers.empty and predictor_gk_data.empty:
             st.warning("No penalty data could be loaded. Try adjusting the season range.")
         else:
