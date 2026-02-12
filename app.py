@@ -428,6 +428,12 @@ def scrape_penalty_goalkeepers(tm_slug, tm_code, season_id=None, is_cup=False):
     return pd.DataFrame(data)
 
 
+def _tm_parse_int(s):
+    clean = s.replace("'", "").replace(",", "").replace(".", "").replace("\xa0", "").strip()
+    clean = clean.split("(")[0].strip()
+    return int(clean) if clean.isdigit() else 0
+
+
 def _parse_scorers_page(soup):
     table = soup.find("table", class_="items")
     if not table:
@@ -440,10 +446,7 @@ def _parse_scorers_page(soup):
     rows = tbody.find_all("tr")
     data = []
 
-    def parse_int(s):
-        clean = s.replace("'", "").replace(",", "").replace(".", "").replace("\xa0", "").strip()
-        clean = clean.split("(")[0].strip()
-        return int(clean) if clean.isdigit() else 0
+    parse_int = _tm_parse_int
 
     for row in rows:
         cells = row.find_all(["td", "th"])
@@ -542,6 +545,98 @@ def scrape_top_scorers(tm_slug, tm_code, season_id, is_cup=False):
     df = pd.DataFrame(all_data)
     if not df.empty:
         df = df.sort_values("Goals", ascending=False).reset_index(drop=True)
+    return df
+
+
+def _parse_assists_page(soup):
+    table = soup.find("table", class_="items")
+    if not table:
+        tables = soup.find_all("table")
+        table = tables[1] if len(tables) >= 2 else None
+    if not table:
+        return []
+    tbody = table.find("tbody") or table
+    data = []
+    rows = tbody.find_all("tr")
+    for row in rows:
+        cells = row.find_all("td")
+        if len(cells) < 5:
+            continue
+
+        player_name = ""
+        for c in cells:
+            hl = c.find(class_="hauptlink")
+            if hl:
+                player_name = hl.text.strip()
+                break
+
+        position = cells[4].text.strip() if len(cells) > 4 else ""
+
+        club = ""
+        if len(cells) > 7:
+            club_img = cells[7].find("img")
+            if club_img:
+                club = club_img.get("alt", "") or club_img.get("title", "")
+        if not club:
+            for img in row.find_all("img"):
+                alt = img.get("alt", "")
+                if alt and len(alt) > 2 and alt != player_name and "flag" not in alt.lower():
+                    parent = img.find_parent("td")
+                    parent_cls = parent.get("class", []) if parent else []
+                    if "hauptlink" not in parent_cls:
+                        club = alt
+                        break
+
+        appearances = _tm_parse_int(cells[8].text) if len(cells) > 8 else 0
+        assists = _tm_parse_int(cells[9].text) if len(cells) > 9 else 0
+
+        if player_name and assists > 0:
+            data.append({
+                "Player": player_name,
+                "Position": position,
+                "Club": club,
+                "Appearances": appearances,
+                "Assists": assists,
+            })
+    return data
+
+
+@st.cache_data(ttl=604800, show_spinner=False)
+def scrape_top_assists(tm_slug, tm_code, season_id, is_cup=False):
+    wb = "pokalwettbewerb" if is_cup else "wettbewerb"
+    base_url = f"https://www.transfermarkt.us/{tm_slug}/assistliste/{wb}/{tm_code}/saison_id/{season_id}/plus/1"
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/120.0.0.0 Safari/537.36"
+        )
+    }
+    all_data = []
+    for page in range(1, 15):
+        page_url = base_url if page == 1 else f"{base_url}/page/{page}"
+        try:
+            response = requests.get(page_url, headers=headers, timeout=30)
+            response.raise_for_status()
+        except Exception:
+            break
+        soup = BeautifulSoup(response.text, "html.parser")
+        page_data = _parse_assists_page(soup)
+        if not page_data:
+            break
+        all_data.extend(page_data)
+        pager = soup.find("div", class_="pager")
+        if not pager:
+            break
+        next_link = pager.find("li", class_="tm-pagination__list-item--icon-next-page")
+        if not next_link or not next_link.find("a"):
+            last_links = [a for a in pager.find_all("a") if f"page/{page + 1}" in a.get("href", "")]
+            if not last_links:
+                break
+
+    df = pd.DataFrame(all_data)
+    if not df.empty:
+        df = df.sort_values("Assists", ascending=False).reset_index(drop=True)
     return df
 
 
@@ -2185,9 +2280,173 @@ try:
                                     st.markdown(f"- {ins}")
 
                             st.markdown(f"**{selected_team} Scorers ({latest_season}):**")
-                            display_scorers = team_scorers[["Player", "Position", "Goals", "Pen. Goals", "Open Play Goals"]].copy()
+                            display_scorers = team_scorers[["Player", "Position", "Goals", "Pen. Goals", "Open Play Goals", "Assists"]].copy()
                             display_scorers.index = range(1, len(display_scorers) + 1)
                             st.dataframe(display_scorers, use_container_width=True)
+
+                            st.divider()
+                            st.markdown("### Assist Sources — Wagon Wheel")
+                            st.markdown(
+                                f"Where do **{selected_team}**'s assists come from? "
+                                f"This shows which players and positions create chances for the **{latest_season}** season."
+                            )
+                            with st.spinner("Loading assist data from Transfermarkt..."):
+                                assists_df = scrape_top_assists(
+                                    league_cfg["tm_slug"], league_cfg["tm_code"],
+                                    tm_season_id, is_cup=league_cfg["is_cup"]
+                                )
+                            if not assists_df.empty:
+                                team_assists = assists_df[
+                                    assists_df["Club"].str.lower().str.contains(team_name_lower, na=False) |
+                                    assists_df["Club"].str.lower().apply(
+                                        lambda x: team_name_lower.split()[0] in x if team_name_lower else False
+                                    )
+                                ].copy()
+                                if team_assists.empty:
+                                    team_words = team_name_lower.split()
+                                    for word in team_words:
+                                        if len(word) > 3:
+                                            team_assists = assists_df[
+                                                assists_df["Club"].str.lower().str.contains(word, na=False)
+                                            ].copy()
+                                            if not team_assists.empty:
+                                                break
+
+                                if not team_assists.empty:
+                                    def _pos_category(pos):
+                                        pos_lower = pos.lower() if pos else ""
+                                        if any(w in pos_lower for w in ["back", "defender", "defence"]):
+                                            return "Defender"
+                                        elif any(w in pos_lower for w in ["midfield", "midfielder"]):
+                                            return "Midfielder"
+                                        elif any(w in pos_lower for w in ["keeper", "goal"]):
+                                            return "Goalkeeper"
+                                        elif any(w in pos_lower for w in ["forward", "striker", "winger", "wing", "attack"]):
+                                            return "Forward"
+                                        return "Other"
+
+                                    team_assists["Pos_Group"] = team_assists["Position"].apply(_pos_category)
+                                    total_assists = team_assists["Assists"].sum()
+
+                                    pos_colors = {"Defender": "#3498db", "Midfielder": "#2ecc71", "Forward": "#e74c3c", "Goalkeeper": "#f39c12", "Other": "#95a5a6"}
+                                    pos_order = ["Defender", "Midfielder", "Forward", "Goalkeeper", "Other"]
+                                    present_groups = [p for p in pos_order if p in team_assists["Pos_Group"].values]
+
+                                    wagon_players = []
+                                    wagon_assists = []
+                                    wagon_colors = []
+                                    wagon_positions = []
+                                    for pg in present_groups:
+                                        grp = team_assists[team_assists["Pos_Group"] == pg].sort_values("Assists", ascending=False)
+                                        for _, r in grp.iterrows():
+                                            wagon_players.append(r["Player"])
+                                            wagon_assists.append(r["Assists"])
+                                            wagon_colors.append(pos_colors.get(pg, "#95a5a6"))
+                                            wagon_positions.append(pg)
+
+                                    fig_wagon = go.Figure()
+                                    fig_wagon.add_trace(go.Barpolar(
+                                        r=wagon_assists,
+                                        theta=wagon_players,
+                                        marker_color=wagon_colors,
+                                        marker_line_color="#fff",
+                                        marker_line_width=1,
+                                        opacity=0.85,
+                                        hovertemplate="<b>%{theta}</b><br>Assists: %{r}<extra></extra>",
+                                    ))
+                                    fig_wagon.update_layout(
+                                        title=f"{selected_team} Assist Sources ({latest_season})",
+                                        polar=dict(
+                                            radialaxis=dict(visible=True, showticklabels=True, tickfont=dict(size=10)),
+                                            angularaxis=dict(tickfont=dict(size=9)),
+                                        ),
+                                        height=max(450, len(wagon_players) * 25 + 150),
+                                        margin=dict(l=80, r=80, t=50, b=50),
+                                        showlegend=False,
+                                    )
+                                    st.plotly_chart(fig_wagon, use_container_width=True)
+
+                                    legend_html = " &nbsp; ".join(
+                                        f'<span style="display:inline-block;width:12px;height:12px;background:{pos_colors[pg]};border-radius:2px;margin-right:4px;vertical-align:middle;"></span>{pg}'
+                                        for pg in present_groups
+                                    )
+                                    st.markdown(legend_html, unsafe_allow_html=True)
+
+                                    pos_assist_totals = team_assists.groupby("Pos_Group")["Assists"].sum()
+                                    aw1, aw2 = st.columns(2)
+                                    with aw1:
+                                        fig_pos_assists = go.Figure(data=[go.Pie(
+                                            labels=[p for p in pos_order if p in pos_assist_totals.index],
+                                            values=[pos_assist_totals[p] for p in pos_order if p in pos_assist_totals.index],
+                                            hole=0.4,
+                                            marker_colors=[pos_colors[p] for p in pos_order if p in pos_assist_totals.index],
+                                        )])
+                                        fig_pos_assists.update_layout(
+                                            title="Assists by Position Group",
+                                            height=300, margin=dict(l=20, r=20, t=40, b=20),
+                                        )
+                                        st.plotly_chart(fig_pos_assists, use_container_width=True)
+                                    with aw2:
+                                        top_assisters = team_assists.head(8)
+                                        fig_assist_bar = go.Figure()
+                                        fig_assist_bar.add_trace(go.Bar(
+                                            y=top_assisters["Player"], x=top_assisters["Assists"],
+                                            orientation="h",
+                                            marker_color=[pos_colors.get(pg, "#95a5a6") for pg in top_assisters["Pos_Group"]],
+                                        ))
+                                        fig_assist_bar.update_layout(
+                                            title=f"Top Assist Providers",
+                                            xaxis_title="Assists",
+                                            height=300,
+                                            margin=dict(l=120, r=20, t=40, b=20),
+                                            yaxis=dict(autorange="reversed"),
+                                        )
+                                        st.plotly_chart(fig_assist_bar, use_container_width=True)
+
+                                    assist_insights = []
+                                    top_assister = team_assists.iloc[0]
+                                    top_assister_pct = top_assister["Assists"] / max(1, total_assists) * 100
+                                    if top_assister_pct > 30:
+                                        assist_insights.append(
+                                            f"**Creative hub** — {top_assister['Player']} provides {top_assister_pct:.0f}% of all assists "
+                                            f"({top_assister['Assists']} of {total_assists}). The team's chance creation flows heavily through this player."
+                                        )
+                                    mid_assists = pos_assist_totals.get("Midfielder", 0)
+                                    mid_assist_pct = mid_assists / max(1, total_assists) * 100
+                                    def_assists = pos_assist_totals.get("Defender", 0)
+                                    def_assist_pct = def_assists / max(1, total_assists) * 100
+                                    fwd_assists = pos_assist_totals.get("Forward", 0)
+                                    fwd_assist_pct = fwd_assists / max(1, total_assists) * 100
+                                    if def_assist_pct > 25:
+                                        assist_insights.append(
+                                            f"**Defenders as playmakers ({def_assist_pct:.0f}% of assists)** — full-backs and "
+                                            f"centre-backs are major creative outlets, likely through overlapping runs, crosses, and long-range passing."
+                                        )
+                                    if fwd_assist_pct > 30:
+                                        assist_insights.append(
+                                            f"**Forwards creating for each other ({fwd_assist_pct:.0f}%)** — wingers and strikers "
+                                            f"are combining effectively, suggesting good movement and interplay in the final third."
+                                        )
+                                    n_assisters = len(team_assists)
+                                    if n_assisters >= 8 and top_assister_pct < 25:
+                                        assist_insights.append(
+                                            f"**Spread creativity** — {n_assisters} different players have provided assists with no single "
+                                            f"player dominating. This makes the team harder to shut down tactically."
+                                        )
+
+                                    if assist_insights:
+                                        st.markdown("**Assist Analysis:**")
+                                        for ai in assist_insights:
+                                            st.markdown(f"- {ai}")
+
+                                    st.markdown(f"**{selected_team} Assist Providers ({latest_season}):**")
+                                    display_assists = team_assists[["Player", "Position", "Appearances", "Assists"]].copy()
+                                    display_assists.index = range(1, len(display_assists) + 1)
+                                    st.dataframe(display_assists, use_container_width=True)
+                                else:
+                                    st.info(f"Could not match {selected_team} in the assist data.")
+                            else:
+                                st.info(f"Assist data for the {latest_season} season could not be loaded from Transfermarkt.")
                         else:
                             st.info(f"Could not match {selected_team} in the scorer data. Team name matching between data sources may differ.")
                     else:
