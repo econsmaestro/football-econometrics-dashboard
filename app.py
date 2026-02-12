@@ -278,6 +278,52 @@ def load_multi_season(start_year, end_year, wiki_pattern, wiki_name, season_type
     return pd.DataFrame()
 
 
+def rebase_to_standard_season(df, games_per_season):
+    if df.empty or games_per_season <= 0 or "Pld" not in df.columns:
+        return df
+    result = df.copy()
+    result["Rebased"] = False
+    result["Original_Pld"] = result["Pld"]
+    if "Season_End" in result.columns:
+        for se in result["Season_End"].unique():
+            mask = result["Season_End"] == se
+            season_pld = result.loc[mask, "Pld"]
+            mode_pld = int(season_pld.mode().iloc[0]) if not season_pld.mode().empty else int(season_pld.max())
+            if mode_pld == games_per_season:
+                continue
+            is_complete = (season_pld == mode_pld).all()
+            if not is_complete:
+                continue
+            scale = games_per_season / mode_pld
+            counting_cols = ["Pts", "W", "D", "L", "GF", "GA", "GD"]
+            for col in counting_cols:
+                if col in result.columns:
+                    result.loc[mask, col] = (result.loc[mask, col] * scale).round(0).astype(int)
+            result.loc[mask, "Pld"] = games_per_season
+            result.loc[mask, "Rebased"] = True
+    else:
+        mode_pld = int(result["Pld"].mode().iloc[0]) if not result["Pld"].mode().empty else int(result["Pld"].max())
+        mode_share = (result["Pld"] == mode_pld).sum() / len(result)
+        if mode_pld != games_per_season and mode_share >= 0.9:
+            mask = result["Pld"] == mode_pld
+            scale = games_per_season / mode_pld
+            counting_cols = ["Pts", "W", "D", "L", "GF", "GA", "GD"]
+            for col in counting_cols:
+                if col in result.columns:
+                    result.loc[mask, col] = (result.loc[mask, col] * scale).round(0).astype(int)
+            result.loc[mask, "Pld"] = games_per_season
+            result.loc[mask, "Rebased"] = True
+    if "PPG" in result.columns and "Pts" in result.columns:
+        result["PPG"] = (result["Pts"] / result["Pld"]).round(2)
+    if "Win%" in result.columns and "W" in result.columns:
+        result["Win%"] = ((result["W"] / result["Pld"]) * 100).round(1)
+    if "GF/Game" in result.columns and "GF" in result.columns:
+        result["GF/Game"] = (result["GF"] / result["Pld"]).round(2)
+    if "GA/Game" in result.columns and "GA" in result.columns:
+        result["GA/Game"] = (result["GA"] / result["Pld"]).round(2)
+    return result
+
+
 @st.cache_data(ttl=604800, show_spinner=False)
 def scrape_penalty_takers(tm_slug, tm_code, season_id=None, is_cup=False):
     wb = "pokalwettbewerb" if is_cup else "wettbewerb"
@@ -821,8 +867,11 @@ has_league_tables = league_cfg["wiki_pattern"] is not None
 try:
     if has_league_tables:
         with st.spinner("Fetching league data..."):
-            single_season = fetch_season_data(int(season), league_cfg["wiki_pattern"], league_cfg["wiki_name"], league_cfg["season_type"])
-            multi_season = load_multi_season(season_range[0], season_range[1], league_cfg["wiki_pattern"], league_cfg["wiki_name"], league_cfg["season_type"])
+            single_season_raw = fetch_season_data(int(season), league_cfg["wiki_pattern"], league_cfg["wiki_name"], league_cfg["season_type"])
+            multi_season_raw = load_multi_season(season_range[0], season_range[1], league_cfg["wiki_pattern"], league_cfg["wiki_name"], league_cfg["season_type"])
+            gps = league_cfg["games_per_season"]
+            single_season = rebase_to_standard_season(single_season_raw, gps)
+            multi_season = rebase_to_standard_season(multi_season_raw, gps)
     else:
         single_season = pd.DataFrame()
         multi_season = pd.DataFrame()
@@ -842,8 +891,18 @@ try:
     if has_league_tables:
         season_label = format_season_label(season, league_cfg["season_type"])
 
+        n_rebased = int(multi_season["Rebased"].sum()) if "Rebased" in multi_season.columns else 0
+        rebased_seasons = sorted(multi_season.loc[multi_season.get("Rebased", False) == True, "Season"].unique().tolist()) if n_rebased > 0 else []
+        single_rebased = bool(single_season.get("Rebased", pd.Series([False])).any()) if "Rebased" in single_season.columns else False
+
         with tab1:
             st.subheader(f"{selected_league} {season_label} Standings")
+            if single_rebased and "Original_Pld" in single_season.columns:
+                orig_pld = int(single_season["Original_Pld"].iloc[0])
+                st.info(
+                    f"This season originally had **{orig_pld} games** per team (different league size). "
+                    f"All stats have been rebased to a **{league_cfg['games_per_season']}-game** standard for fair comparison across seasons."
+                )
             display_cols = [c for c in ["Pos", "Squad", "Pld", "W", "D", "L", "GF", "GA", "GD", "Pts", "PPG", "Win%"] if c in single_season.columns]
             n_teams = league_cfg["teams"]
             table_height = max(200, min(740, 40 + n_teams * 35))
@@ -880,6 +939,12 @@ try:
                 f"across **{multi_season['Season_End'].nunique()}** seasons "
                 f"({range_start_label} to {range_end_label})."
             )
+            if rebased_seasons:
+                n_rb_seasons = len(set(rebased_seasons))
+                st.caption(
+                    f"Note: {n_rb_seasons} season(s) had a different number of games per team and have been "
+                    f"rebased to the current {league_cfg['games_per_season']}-game standard for fair comparison."
+                )
 
             numeric_vars = ["W", "D", "L", "GF", "GA", "GD", "Pts", "PPG", "Win%", "GF/Game", "GA/Game"]
             available_vars = [v for v in numeric_vars if v in multi_season.columns]
@@ -1872,6 +1937,13 @@ try:
                 "Select a team to see a personalised performance profile with historical trends, "
                 "peer benchmarking, and data-driven recommendations for improving their chances of winning the title."
             )
+
+            if rebased_seasons:
+                n_rb_seasons = len(set(rebased_seasons))
+                st.caption(
+                    f"Note: {n_rb_seasons} season(s) had a different number of games per team and have been "
+                    f"rebased to the current {league_cfg['games_per_season']}-game standard for fair comparison."
+                )
 
             if not multi_season.empty and "Squad" in multi_season.columns:
                 all_teams = sorted(multi_season["Squad"].unique().tolist())
