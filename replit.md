@@ -2,35 +2,42 @@
 
 ## Overview
 
-This is a Football Econometrics Dashboard built with Streamlit that scrapes and displays advanced football (soccer) statistics from FBRef.com. The application allows users to explore player and team statistics across Europe's top 5 leagues (Premier League, La Liga, Serie A, Bundesliga, Ligue 1) for seasons from 2014-15 through 2023-24.
-
-The project is in early development — the core scraping function exists but is incomplete (no response handling or data parsing yet), and the dashboard UI is minimal.
+A reproducible football analytics/econometrics study built with Streamlit that shows what statistically matters for success in the English Premier League. The app covers seasons from 2014-15 through 2023-24, offering league tables, statistical analysis (OLS regression, correlation matrices), interactive visualizations, and a points predictor.
 
 ## User Preferences
 
 Preferred communication style: Simple, everyday language.
 
+## Recent Changes
+
+- **2026-02-12**: Expanded from simple league table to full econometrics dashboard with 4 tabs (League Table, Statistical Analysis, Visualizations, Predictions & Insights). Added multi-season data loading, OLS regression models, correlation analysis, scatter/box/bar plots, and a points predictor with confidence intervals.
+- **2026-02-12**: Switched data source from FBRef (blocked with 403) to Wikipedia Premier League season articles.
+
 ## System Architecture
 
 ### Frontend
-- **Framework**: Streamlit, a Python-based web framework for data dashboards
-- **Layout**: Uses Streamlit's wide layout mode with a sidebar for user controls (season selection)
-- **Entry point**: `app.py` is the main Streamlit application; run with `streamlit run app.py`
+- **Framework**: Streamlit with wide layout
+- **Entry point**: `app.py` — run with `streamlit run app.py --server.port 5000`
+- **Tabs**: League Table, Statistical Analysis, Visualizations, Predictions & Insights
+- **Sidebar**: Season selector (2015-2024), season range slider for multi-season analysis
 
 ### Data Layer
-- **Data source**: Web scraping from FBRef.com (fbref.com), which provides detailed football statistics
-- **Scraping approach**: Uses `requests` library with custom User-Agent headers to fetch HTML pages, with `pandas` (likely `pd.read_html()`) for parsing HTML tables
-- **Caching**: Streamlit's `@st.cache_data` decorator with a 1-hour TTL to avoid repeated scraping requests
-- **Supported leagues**: England (Premier League, comp_id=9), Spain (La Liga, comp_id=12), Italy (Serie A, comp_id=11), Germany (Bundesliga, comp_id=20), France (Ligue 1, comp_id=13)
+- **Data source**: Wikipedia Premier League season articles (e.g., `https://en.wikipedia.org/wiki/2023–24_Premier_League`)
+- **Scraping**: `requests` + `pandas.read_html()` to parse league standing tables
+- **Caching**: `@st.cache_data` with 1-hour TTL
+- **Variables extracted**: Pos, Squad, Pld, W, D, L, GF, GA, GD, Pts
+- **Derived metrics**: PPG (points per game), Win%, GF/Game, GA/Game
 
-### Key Design Decisions
-1. **Streamlit over Flask/Django**: Chosen for rapid prototyping of data dashboards without needing separate frontend code. Good for data-focused applications but limited for complex UI.
-2. **Direct web scraping over API**: FBRef doesn't offer a public API, so HTML scraping is used. This is fragile — URL patterns and HTML structure can change.
-3. **In-memory caching**: No database is used; data is cached in Streamlit's session/app cache. This keeps the architecture simple but means data is re-fetched when cache expires.
+### Analytics
+- **Correlation matrix**: Heatmap of all numeric variables
+- **OLS Regression**: Two models — Pts ~ GF + GA, and Pts ~ W + D + L (via statsmodels)
+- **Visualizations**: Plotly scatter plots with trendlines, bar charts, box plots, line charts
+- **Predictor**: Regression-based points prediction with 95% confidence intervals
 
 ### File Structure
-- `app.py` — Main Streamlit application with scraping logic and dashboard UI
-- `main.py` — Placeholder/default entry point (not used by the dashboard)
+- `app.py` — Main Streamlit application (scraping, analysis, UI)
+- `main.py` — Placeholder (not used)
+- `.streamlit/config.toml` — Streamlit server config (port 5000, headless)
 
 ## External Dependencies
 
@@ -38,10 +45,14 @@ Preferred communication style: Simple, everyday language.
 - **streamlit** — Web dashboard framework
 - **pandas** — Data manipulation and HTML table parsing
 - **requests** — HTTP requests for web scraping
+- **plotly** — Interactive visualizations
+- **statsmodels** — OLS regression and statistical modeling
+- **scipy** — Statistical tests (Pearson correlation)
+- **scikit-learn** — ML utilities (available but not directly used yet)
+- **beautifulsoup4**, **lxml**, **html5lib** — HTML parsing support
 
 ### External Services
-- **FBRef.com** — Primary data source for football statistics. URLs follow the pattern: `https://fbref.com/en/comps/{comp_id}/{season_start}-{season_end}/stats/...`
-- Note: FBRef has rate limiting; the `time` module is imported (likely for adding delays between requests) and a custom User-Agent header is set to avoid being blocked
+- **Wikipedia** — Primary data source for Premier League standings by season
 
 ### No Database
-- The application currently has no database. All data is fetched on-demand and cached in memory.
+- All data is fetched on-demand and cached in memory.
