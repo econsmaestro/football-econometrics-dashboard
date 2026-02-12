@@ -952,11 +952,15 @@ try:
             taker_list = agg_takers.sort_values("Penalties", ascending=False)["Player"].tolist()
             gk_list = predictor_gk_data.sort_values("Faced", ascending=False)[gk_name_col].tolist()
 
-            pred_col1, pred_col2 = st.columns(2)
-            with pred_col1:
-                selected_taker = st.selectbox("Penalty Taker", taker_list, key="pen_taker")
-            with pred_col2:
-                selected_gk = st.selectbox("Goalkeeper (all-time PL era)", gk_list, key="pen_gk")
+            with st.form("penalty_predictor_form"):
+                form_col1, form_col2, form_col3 = st.columns([2, 2, 1])
+                with form_col1:
+                    selected_taker = st.selectbox("Penalty Taker", taker_list, key="pen_taker")
+                with form_col2:
+                    selected_gk = st.selectbox("Goalkeeper (all-time PL era)", gk_list, key="pen_gk")
+                with form_col3:
+                    st.markdown("<br>", unsafe_allow_html=True)
+                    predict_clicked = st.form_submit_button("Predict", use_container_width=True, type="primary")
 
             taker_row = agg_takers[agg_takers["Player"] == selected_taker].iloc[0]
             gk_row = predictor_gk_data[predictor_gk_data[gk_name_col] == selected_gk].iloc[0]
