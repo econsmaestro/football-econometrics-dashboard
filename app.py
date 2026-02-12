@@ -1046,32 +1046,137 @@ try:
                     "**Reminder: All directions below are from YOUR perspective as the goalkeeper** "
                     "(facing the penalty taker). \"Left\" = dive to your left, \"Right\" = dive to your right."
                 )
+
+                gk_reputation = weighted_gk_save / league_avg_save
+                taker_skill = weighted_taker_conv / league_avg_conversion
+
+                st.markdown("#### Naive Analysis (no strategic adjustment)")
                 st.markdown(
-                    f"Based on league-wide shot placement data, here is where **{selected_gk}** "
-                    f"should dive against **{selected_taker}** to maximise the chance of a save:"
+                    "This assumes the taker shoots based on league-average placement — "
+                    "i.e. they haven't studied this specific goalkeeper."
                 )
 
-                advice_data = []
+                naive_data = []
                 for zone, probs in ZONE_PROBS.items():
                     expected_saves = probs["Taker %"] * probs["GK Save %"] / 100
-                    advice_data.append({
+                    naive_data.append({
                         "Zone": zone,
                         "Taker Aims Here %": probs["Taker %"],
-                        "GK Save Rate in Zone %": probs["GK Save %"],
+                        "GK Save Rate %": probs["GK Save %"],
                         "Expected Save Value": round(expected_saves, 2),
                     })
-                advice_df = pd.DataFrame(advice_data).sort_values("Expected Save Value", ascending=False)
-                advice_df.index = range(1, len(advice_df) + 1)
-                st.dataframe(advice_df, use_container_width=True)
+                naive_df = pd.DataFrame(naive_data).sort_values("Expected Save Value", ascending=False)
+                naive_df.index = range(1, len(naive_df) + 1)
+                st.dataframe(naive_df, use_container_width=True)
 
-                best_zone = advice_df.iloc[0]["Zone"]
-                best_value = advice_df.iloc[0]["Expected Save Value"]
-                st.success(
-                    f"**Recommendation:** Dive to **your {best_zone.lower()}** (expected save value: {best_value:.2f}). "
-                    f"This zone combines a high likelihood of the taker aiming there with a reasonable save probability. "
-                    f"Remember: this is YOUR left/right as the goalkeeper facing the striker. "
-                    f"The top corners have the lowest save rates (<6%) — if the taker goes there, it's very hard to stop."
+                naive_best = naive_df.iloc[0]["Zone"]
+
+                st.divider()
+                st.markdown("#### Game-Theory Adjusted Analysis")
+                st.markdown(
+                    f"Smart penalty takers do their homework. **{selected_gk}** has a "
+                    f"{'high' if gk_reputation > 1.1 else 'average' if gk_reputation > 0.9 else 'below-average'} "
+                    f"save rate ({gk_save_rate:.1f}% vs league avg {league_avg_save:.0f}%). "
                 )
+                if gk_reputation > 1.1:
+                    st.markdown(
+                        f"Because **{selected_gk}** is known as a strong penalty saver, "
+                        f"**{selected_taker}** is more likely to adjust — avoiding the most "
+                        f"predictable zones (bottom corners) and instead going for harder-to-save "
+                        f"areas (top corners, centre). This shifts where the goalkeeper should expect the shot."
+                    )
+                elif gk_reputation < 0.9:
+                    st.markdown(
+                        f"Because **{selected_gk}** has a lower-than-average save rate, "
+                        f"**{selected_taker}** is less likely to overthink placement and will "
+                        f"probably stick to their preferred zones (typically bottom corners)."
+                    )
+                else:
+                    st.markdown(
+                        f"With an average save reputation, **{selected_taker}** will likely "
+                        f"make moderate adjustments to their usual placement."
+                    )
+
+                adjusted_data = []
+                for zone, probs in ZONE_PROBS.items():
+                    base_taker_pct = probs["Taker %"]
+                    is_easy_zone = zone.startswith("Bottom-") and zone != "Bottom-Centre"
+                    is_hard_zone = zone.startswith("Top-") and zone != "Top-Centre"
+                    is_centre = "Centre" in zone
+
+                    shift_factor = (gk_reputation - 1.0) * taker_skill * 0.4
+
+                    if is_easy_zone:
+                        adj_taker_pct = base_taker_pct * (1 - shift_factor)
+                    elif is_hard_zone:
+                        adj_taker_pct = base_taker_pct * (1 + shift_factor * 1.2)
+                    elif is_centre:
+                        adj_taker_pct = base_taker_pct * (1 + shift_factor * 0.8)
+                    else:
+                        adj_taker_pct = base_taker_pct * (1 + shift_factor * 0.3)
+
+                    adj_taker_pct = max(1.0, adj_taker_pct)
+                    adjusted_data.append({
+                        "Zone": zone,
+                        "Base Taker %": base_taker_pct,
+                        "Adjusted Taker %": round(adj_taker_pct, 1),
+                        "Shift": f"{'+' if adj_taker_pct > base_taker_pct else ''}{adj_taker_pct - base_taker_pct:.1f}",
+                        "GK Save Rate %": probs["GK Save %"],
+                        "Adj. Expected Save": round(adj_taker_pct * probs["GK Save %"] / 100, 2),
+                    })
+
+                total_adj_pct = sum(d["Adjusted Taker %"] for d in adjusted_data)
+                for d in adjusted_data:
+                    d["Adjusted Taker %"] = round(d["Adjusted Taker %"] / total_adj_pct * 100, 1)
+                    d["Adj. Expected Save"] = round(d["Adjusted Taker %"] * d["GK Save Rate %"] / 100, 2)
+
+                adj_df = pd.DataFrame(adjusted_data).sort_values("Adj. Expected Save", ascending=False)
+                adj_df.index = range(1, len(adj_df) + 1)
+                st.dataframe(adj_df, use_container_width=True)
+
+                adj_best = adj_df.iloc[0]["Zone"]
+                adj_best_value = adj_df.iloc[0]["Adj. Expected Save"]
+
+                if adj_best != naive_best:
+                    st.warning(
+                        f"**Strategic shift detected!** Without adjustment, the best dive is **your {naive_best.lower()}**. "
+                        f"But accounting for the taker's likely adjustment against this goalkeeper, "
+                        f"the best dive shifts to **your {adj_best.lower()}** "
+                        f"(adjusted expected save value: {adj_best_value:.2f})."
+                    )
+                    st.success(
+                        f"**Final recommendation:** Dive to **your {adj_best.lower()}**. "
+                        f"The taker is likely to adjust their placement because of your reputation, "
+                        f"so anticipate the counter-adjustment rather than the naive expectation. "
+                        f"Remember: this is YOUR left/right as the goalkeeper facing the striker."
+                    )
+                else:
+                    st.success(
+                        f"**Recommendation:** Dive to **your {adj_best.lower()}** "
+                        f"(expected save value: {adj_best_value:.2f}). "
+                        f"Even after accounting for the taker's likely strategic adjustment, "
+                        f"this remains the best zone to cover. "
+                        f"Remember: this is YOUR left/right as the goalkeeper facing the striker."
+                    )
+
+                with st.expander("How the game-theory adjustment works", expanded=False):
+                    st.markdown(
+                        "**The strategic dilemma:** Penalty kicks are a classic game-theory scenario. "
+                        "Both the taker and goalkeeper must commit to a direction before seeing what the other does.\n\n"
+                        "**The adjustment logic:**\n"
+                        f"1. **Goalkeeper reputation factor**: {selected_gk}'s weighted save rate "
+                        f"({weighted_gk_save:.1f}%) is {gk_reputation:.2f}x the league average ({league_avg_save}%). "
+                        f"{'A high reputation means takers will adjust more.' if gk_reputation > 1.1 else 'A normal reputation means moderate adjustment.'}\n\n"
+                        f"2. **Taker skill factor**: {selected_taker}'s weighted conversion rate "
+                        f"({weighted_taker_conv:.1f}%) is {taker_skill:.2f}x the league average ({league_avg_conversion}%). "
+                        f"Skilled takers are better at adapting their placement.\n\n"
+                        "3. **Shift mechanics**: Against a strong-saving GK, takers shift away from "
+                        "bottom corners (easiest to save) toward top corners (hardest to save but riskier) "
+                        "and sometimes down the centre (exploiting the keeper's tendency to dive). "
+                        "The shift magnitude depends on both the GK's reputation and the taker's skill level.\n\n"
+                        "4. **Result**: The adjusted zone probabilities show where a strategic taker is "
+                        "actually likely to aim, which may differ significantly from league averages."
+                    )
 
             predictor_fragment()
         elif agg_takers.empty and predictor_gk_data.empty:
