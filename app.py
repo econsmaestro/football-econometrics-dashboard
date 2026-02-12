@@ -777,12 +777,32 @@ try:
         with st.spinner("Fetching penalty data from Transfermarkt..."):
             agg_takers, agg_gks = load_multi_season_penalties(pen_start, pen_end)
 
+        SAVED_SHARE_OF_MISSES = 0.57
+        OFF_TARGET_SHARE_OF_MISSES = 0.43
+
         if not agg_takers.empty:
             st.subheader("Penalty Takers")
             st.markdown(f"**{len(agg_takers)} players** with penalty records across the selected seasons.")
-            takers_display = agg_takers.sort_values("Penalties", ascending=False).reset_index(drop=True)
+            takers_display = agg_takers.sort_values("Penalties", ascending=False).reset_index(drop=True).copy()
+            takers_display["Est. Saved"] = (takers_display["Missed"] * SAVED_SHARE_OF_MISSES).round(0).astype(int)
+            takers_display["Est. Off Target"] = takers_display["Missed"] - takers_display["Est. Saved"]
+            takers_display["Saved %"] = np.where(
+                takers_display["Penalties"] > 0,
+                (takers_display["Est. Saved"] / takers_display["Penalties"] * 100).round(1),
+                0.0,
+            )
+            takers_display["Off Target %"] = np.where(
+                takers_display["Penalties"] > 0,
+                (takers_display["Est. Off Target"] / takers_display["Penalties"] * 100).round(1),
+                0.0,
+            )
             takers_display.index += 1
             st.dataframe(takers_display, use_container_width=True, height=400)
+            st.caption(
+                "\"Est. Saved\" and \"Est. Off Target\" are estimated from the \"Missed\" total using "
+                "league-wide research (roughly 57% of missed penalties are saved by the goalkeeper, "
+                "43% miss the target entirely including hitting the woodwork)."
+            )
 
         if not agg_gks.empty:
             st.subheader("Goalkeeper Penalty Records")
@@ -913,10 +933,21 @@ try:
             res_col3.metric("Miss Probability", f"{p_miss * 100:.1f}%")
 
             st.markdown("**Taker Profile**")
+            taker_missed = int(taker_row["Missed"])
+            taker_est_saved = round(taker_missed * SAVED_SHARE_OF_MISSES)
+            taker_est_off_target = taker_missed - taker_est_saved
+            saved_pct = (taker_est_saved / taker_pens * 100) if taker_pens > 0 else 0
+            off_target_pct = (taker_est_off_target / taker_pens * 100) if taker_pens > 0 else 0
+
             t_col1, t_col2, t_col3 = st.columns(3)
             t_col1.metric("Penalties Taken", int(taker_pens))
             t_col2.metric("Scored", int(taker_row["Scored"]))
             t_col3.metric("Conversion Rate", f"{taker_conv:.1f}%")
+
+            t_col4, t_col5, t_col6 = st.columns(3)
+            t_col4.metric("Not Scored", taker_missed)
+            t_col5.metric("Est. Saved by GK", f"{taker_est_saved} ({saved_pct:.0f}%)")
+            t_col6.metric("Est. Off Target", f"{taker_est_off_target} ({off_target_pct:.0f}%)")
 
             st.markdown("**Goalkeeper Profile**")
             g_col1, g_col2, g_col3 = st.columns(3)
