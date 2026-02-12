@@ -72,10 +72,41 @@ for _cat in CATEGORY_ORDER:
 with st.sidebar:
     st.header("Controls")
 
+    _LEAGUE_ICONS = {
+        "Premier League": "\U0001f3f4\U000e0067\U000e0062\U000e0065\U000e006e\U000e0067\U000e007f",
+        "La Liga": "\U0001f1ea\U0001f1f8",
+        "Ligue 1": "\U0001f1eb\U0001f1f7",
+        "Bundesliga": "\U0001f1e9\U0001f1ea",
+        "Serie A": "\U0001f1ee\U0001f1f9",
+        "Eredivisie": "\U0001f1f3\U0001f1f1",
+        "Scottish Premiership": "\U0001f3f4\U000e0067\U000e0062\U000e0073\U000e0063\U000e0074\U000e007f",
+        "Champions League": "\U0001f3c6",
+        "Europa League": "\U0001f7e0",
+        "Conference League": "\U0001f7e2",
+        "FIFA World Cup": "\U0001f30d",
+        "UEFA European Championship": "\U0001f1ea\U0001f1fa",
+        "AFC Asian Cup": "\U0001f30f",
+        "Copa Am\u00e9rica": "\U0001f30e",
+        "CONMEBOL Libertadores": "\U0001f3c6",
+        "Saudi Pro League": "\U0001f1f8\U0001f1e6",
+        "Indian Super League": "\U0001f1ee\U0001f1f3",
+        "J1 League": "\U0001f1ef\U0001f1f5",
+        "K League 1": "\U0001f1f0\U0001f1f7",
+        "Singapore Premier League": "\U0001f1f8\U0001f1ec",
+        "MLS": "\U0001f1fa\U0001f1f8",
+        "Argentine Primera Divisi\u00f3n": "\U0001f1e6\U0001f1f7",
+        "Brasileir\u00e3o S\u00e9rie A": "\U0001f1e7\U0001f1f7",
+        "Liga BetPlay (Colombia)": "\U0001f1e8\U0001f1f4",
+        "Chilean Primera Divisi\u00f3n": "\U0001f1e8\U0001f1f1",
+        "Uruguayan Primera Divisi\u00f3n": "\U0001f1fa\U0001f1fe",
+        "Paraguayan Primera Divisi\u00f3n": "\U0001f1f5\U0001f1fe",
+        "Peruvian Liga 1": "\U0001f1f5\U0001f1ea",
+        "Bolivian Primera Divisi\u00f3n": "\U0001f1e7\U0001f1f4",
+        "Venezuelan Primera Divisi\u00f3n": "\U0001f1fb\U0001f1ea",
+    }
+
     def _format_league(name):
-        cat = LEAGUE_CONFIG[name].get("category", "")
-        icon = {"Europe": "\u26bd", "UEFA Competitions": "\U0001f3c6", "International": "\U0001f30d",
-                "Middle East": "\u26bd", "Asia": "\u26bd", "Americas": "\u26bd"}.get(cat, "\u26bd")
+        icon = _LEAGUE_ICONS.get(name, "\u26bd")
         return f"{icon} {name}"
 
     selected_league = st.selectbox("Competition", LEAGUE_OPTIONS, index=0, format_func=_format_league)
