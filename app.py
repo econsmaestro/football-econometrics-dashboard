@@ -173,6 +173,27 @@ try:
         available_vars = [v for v in numeric_vars if v in multi_season.columns]
         corr_data = multi_season[available_vars].dropna()
 
+        st.subheader("Descriptive Statistics")
+        st.markdown("Summary of key variables across all selected seasons.")
+
+        desc_vars = [v for v in ["W", "D", "L", "GF", "GA", "GD", "Pts", "PPG", "Win%", "GF/Game", "GA/Game"] if v in multi_season.columns]
+        desc_data = multi_season[desc_vars].dropna()
+        desc_table = desc_data.describe().T
+        desc_table["Variance"] = desc_data.var()
+        desc_table = desc_table[["count", "mean", "std", "Variance", "min", "25%", "50%", "75%", "max"]]
+        desc_table.columns = ["Count", "Mean", "Std. Dev.", "Variance", "Min", "25th %ile", "Median", "75th %ile", "Max"]
+        st.dataframe(desc_table.round(3), use_container_width=True)
+
+        with st.expander("Formulas: Descriptive Statistics", expanded=False):
+            st.latex(r"\text{Mean} \;(\bar{x}) = \frac{1}{n}\sum_{i=1}^{n} x_i")
+            st.markdown("The average value — add up all values and divide by how many there are.")
+            st.latex(r"\text{Variance} \;(\sigma^2) = \frac{1}{n-1}\sum_{i=1}^{n}(x_i - \bar{x})^2")
+            st.markdown("How spread out the values are from the average. Larger = more spread.")
+            st.latex(r"\text{Standard Deviation} \;(\sigma) = \sqrt{\text{Variance}}")
+            st.markdown("Same idea as variance but in the original units (e.g. points, goals), which makes it easier to interpret.")
+
+        st.divider()
+
         st.subheader("Correlation Matrix")
         st.markdown(
             "The correlation matrix shows how strongly each pair of stats moves together. "
@@ -200,6 +221,15 @@ try:
         )
         st.plotly_chart(fig_corr, use_container_width=True)
 
+        with st.expander("Formula: Pearson Correlation Coefficient", expanded=False):
+            st.latex(r"r_{xy} = \frac{\sum_{i=1}^{n}(x_i - \bar{x})(y_i - \bar{y})}{\sqrt{\sum_{i=1}^{n}(x_i - \bar{x})^2 \;\cdot\; \sum_{i=1}^{n}(y_i - \bar{y})^2}}")
+            st.markdown(
+                "This measures the linear relationship between two variables. "
+                "**r = +1** means a perfect positive relationship (both go up together), "
+                "**r = -1** means a perfect negative relationship (one goes up, the other goes down), "
+                "and **r = 0** means no linear relationship."
+            )
+
         st.markdown("**Key abbreviations:** W = Wins, D = Draws, L = Losses, "
                      "GF = Goals For (scored), GA = Goals Against (conceded), "
                      "GD = Goal Difference (GF minus GA), Pts = Points, "
@@ -213,6 +243,20 @@ try:
             "formula to predict one thing (Points) from other things (Goals Scored, Goals Conceded). "
             "Think of it like finding the recipe: how much does each ingredient contribute to the final result?"
         )
+
+        with st.expander("Formula: OLS Regression", expanded=False):
+            st.latex(r"\hat{y} = b_0 + b_1 x_1 + b_2 x_2 + \cdots + b_k x_k")
+            st.markdown(
+                "Where:\n"
+                "- **y-hat** is the predicted value (e.g. Points)\n"
+                "- **b₀** is the baseline (intercept) — the predicted value when all inputs are zero\n"
+                "- **b₁, b₂, ...** are the coefficients — how much each input contributes\n"
+                "- **x₁, x₂, ...** are the input variables (e.g. Goals Scored, Goals Conceded)\n\n"
+                "OLS finds the values of b₀, b₁, b₂... that minimise the sum of squared errors:"
+            )
+            st.latex(r"\min \sum_{i=1}^{n}(y_i - \hat{y}_i)^2")
+            st.markdown("In other words, it finds the line (or surface) that is closest to all the data points.")
+
         st.markdown(
             "**Model 1:** We predict a team's **Points** using their **Goals Scored (GF)** "
             "and **Goals Conceded (GA)**."
@@ -229,13 +273,13 @@ try:
             col_r2.metric("Adj. R-squared", f"{model.rsquared_adj:.4f}")
             col_r3.metric("F-statistic", f"{model.fvalue:.2f}")
 
-            with st.expander("What do these numbers mean?", expanded=False):
-                st.markdown(
-                    "- **R-squared**: How much of the variation in Points is explained by the model. "
-                    "1.0 = perfect, 0.0 = explains nothing.\n"
-                    "- **Adj. R-squared**: Same as R-squared but adjusted for the number of variables used.\n"
-                    "- **F-statistic**: Tests whether the model overall is meaningful. Higher = stronger evidence."
-                )
+            with st.expander("Formulas: Model Diagnostics", expanded=False):
+                st.latex(r"R^2 = 1 - \frac{\sum(y_i - \hat{y}_i)^2}{\sum(y_i - \bar{y})^2}")
+                st.markdown("**R-squared**: The proportion of variation in Points explained by the model. 1.0 = perfect fit, 0.0 = explains nothing.")
+                st.latex(r"\bar{R}^2 = 1 - (1 - R^2)\frac{n-1}{n-k-1}")
+                st.markdown("**Adjusted R-squared**: Penalises R-squared for adding more variables. Prevents overfitting — only rises if a new variable genuinely helps.")
+                st.latex(r"F = \frac{R^2 / k}{(1-R^2)/(n-k-1)}")
+                st.markdown("**F-statistic**: Tests whether the model as a whole is meaningful. Higher = stronger evidence that at least one variable matters. n = number of observations, k = number of variables.")
 
             st.markdown("**How much does each factor contribute?**")
             coef_df = pd.DataFrame({
@@ -247,14 +291,12 @@ try:
             })
             st.dataframe(coef_df.set_index("Factor"), use_container_width=True)
 
-            with st.expander("How to read this table", expanded=False):
-                st.markdown(
-                    "- **Effect on Points**: How many points a team gains (or loses) for each additional goal. "
-                    "A positive number means more of that stat = more points.\n"
-                    "- **Std. Error**: How precise the estimate is (smaller = more precise).\n"
-                    "- **Confidence (t-value)**: How confident we are. Values above 2 (or below -2) are generally reliable.\n"
-                    "- **Significance (p-value)**: Probability the result is due to chance. Below 0.05 = statistically significant."
-                )
+            with st.expander("Formulas: Coefficient Statistics", expanded=False):
+                st.latex(r"\text{Std. Error}(b_j) = \sqrt{\frac{\hat{\sigma}^2}{(1-R_j^2)\sum(x_{ij}-\bar{x}_j)^2}}")
+                st.markdown("**Standard Error**: How precise the coefficient estimate is. Smaller = more precise.")
+                st.latex(r"t = \frac{b_j}{\text{Std. Error}(b_j)}")
+                st.markdown("**t-value**: The coefficient divided by its standard error. Values above 2 (or below -2) are generally reliable.")
+                st.markdown("**p-value**: The probability of seeing this result if the variable had no real effect. Below 0.05 = statistically significant (very unlikely to be random chance).")
 
             st.markdown(
                 f"**In plain English:** Each additional goal scored is associated with "
