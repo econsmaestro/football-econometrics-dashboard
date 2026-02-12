@@ -12,22 +12,22 @@ from scipy import stats
 st.set_page_config(page_title="Football Econometrics Dashboard", layout="wide")
 
 st.title("Football Econometrics Dashboard")
-st.caption("A reproducible econometrics study of what statistically matters for success in the Premier League (1992-93 to 2023-24)")
+st.caption("A reproducible econometrics study of what statistically matters for success in the Premier League (1992-93 to 2024-25)")
 
 with st.sidebar:
     st.header("Controls")
     season = st.selectbox(
         "Season (end year)",
-        options=list(range(1993, 2025)),
-        index=31,
+        options=list(range(1993, 2026)),
+        index=32,
     )
     st.divider()
     st.subheader("Multi-Season Analysis")
     season_range = st.slider(
         "Season range for analysis",
         min_value=1993,
-        max_value=2024,
-        value=(1993, 2024),
+        max_value=2025,
+        value=(1993, 2025),
     )
 
 
