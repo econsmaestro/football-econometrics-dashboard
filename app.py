@@ -793,6 +793,11 @@ try:
 
         st.divider()
         st.subheader("Shot Placement Analysis")
+        st.info(
+            "**Important: All directions are from the GOALKEEPER'S perspective** (i.e. as the keeper faces the striker). "
+            "\"Left\" means the goalkeeper's left, \"Right\" means the goalkeeper's right. "
+            "This makes it easy for the goalkeeper to know exactly where to dive."
+        )
         st.markdown(
             "Based on published research on professional penalty kicks (aggregated from major European leagues "
             "and international tournaments), the table below shows where penalty takers typically aim and "
@@ -804,7 +809,7 @@ try:
         zone_df["Expected Goal %"] = (100 - zone_df["GK Save %"] * zone_df["Taker %"] / 100).round(1)
         st.dataframe(zone_df, use_container_width=True)
 
-        st.markdown("**Visual: Goal Zones (Goalkeeper's Perspective)**")
+        st.markdown("**Visual: Goal Zones (Goalkeeper's Perspective — as the keeper faces the ball)**")
         fig_zones = go.Figure()
         zones_grid = [
             {"name": "Top-Left", "x0": 0, "x1": 2.44, "y0": 1.6, "y1": 2.44, "taker": 13.7, "save": 5.2},
@@ -831,10 +836,18 @@ try:
                 text=f"<b>{z['name']}</b><br>Takers: {z['taker']}%<br>Save: {z['save']}%",
                 showarrow=False, font=dict(size=11, color="white"),
             )
+        fig_zones.add_annotation(
+            x=1.22, y=-0.08, text="<b>GK's LEFT</b>",
+            showarrow=False, font=dict(size=12, color="#3498db"),
+        )
+        fig_zones.add_annotation(
+            x=6.1, y=-0.08, text="<b>GK's RIGHT</b>",
+            showarrow=False, font=dict(size=12, color="#3498db"),
+        )
         fig_zones.update_layout(
-            xaxis=dict(range=[-0.3, 7.62], showgrid=False, zeroline=False, title="Width (m)"),
-            yaxis=dict(range=[-0.15, 2.6], showgrid=False, zeroline=False, title="Height (m)", scaleanchor="x"),
-            height=350, margin=dict(l=40, r=40, t=20, b=40),
+            xaxis=dict(range=[-0.3, 7.62], showgrid=False, zeroline=False, title="Width (m) — Goalkeeper's Perspective"),
+            yaxis=dict(range=[-0.25, 2.6], showgrid=False, zeroline=False, title="Height (m)", scaleanchor="x"),
+            height=380, margin=dict(l=40, r=40, t=20, b=50),
             plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
         )
         fig_zones.add_shape(type="rect", x0=0, x1=7.32, y0=0, y1=2.44,
@@ -930,6 +943,10 @@ try:
 
             st.divider()
             st.subheader("Goalkeeper Advice: Where to Dive")
+            st.info(
+                "**Reminder: All directions below are from YOUR perspective as the goalkeeper** "
+                "(facing the penalty taker). \"Left\" = dive to your left, \"Right\" = dive to your right."
+            )
             st.markdown(
                 f"Based on league-wide shot placement data, here is where **{selected_gk}** "
                 f"should dive against **{selected_taker}** to maximise the chance of a save:"
@@ -950,9 +967,10 @@ try:
 
             best_zone = advice_df.iloc[0]["Zone"]
             best_value = advice_df.iloc[0]["Expected Save Value"]
-            st.markdown(
-                f"**Recommendation:** Dive to the **{best_zone}** (expected save value: {best_value:.2f}). "
+            st.success(
+                f"**Recommendation:** Dive to **your {best_zone.lower()}** (expected save value: {best_value:.2f}). "
                 f"This zone combines a high likelihood of the taker aiming there with a reasonable save probability. "
+                f"Remember: this is YOUR left/right as the goalkeeper facing the striker. "
                 f"The top corners have the lowest save rates (<6%) — if the taker goes there, it's very hard to stop."
             )
         elif agg_takers.empty and agg_gks.empty:
