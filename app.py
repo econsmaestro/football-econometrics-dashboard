@@ -182,7 +182,7 @@ def format_season_label(yr, season_type):
     return str(yr)
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=21600, show_spinner=False)
 def fetch_season_data(season_val, wiki_pattern, wiki_name, season_type):
     if wiki_pattern is None:
         raise ValueError("League tables are not available for this competition.")
@@ -264,7 +264,7 @@ def fetch_season_data(season_val, wiki_pattern, wiki_name, season_type):
     raise ValueError(f"Could not find league table for season {season_val}")
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=21600, show_spinner=False)
 def load_multi_season(start_year, end_year, wiki_pattern, wiki_name, season_type):
     frames = []
     for yr in range(start_year, end_year + 1):
@@ -278,7 +278,7 @@ def load_multi_season(start_year, end_year, wiki_pattern, wiki_name, season_type
     return pd.DataFrame()
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=21600, show_spinner=False)
 def scrape_penalty_takers(tm_slug, tm_code, season_id=None, is_cup=False):
     wb = "pokalwettbewerb" if is_cup else "wettbewerb"
     base_url = f"https://www.transfermarkt.us/{tm_slug}/elfmeterschuetzen/{wb}/{tm_code}/plus/1"
@@ -329,7 +329,7 @@ def scrape_penalty_takers(tm_slug, tm_code, season_id=None, is_cup=False):
     return pd.DataFrame(data)
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=21600, show_spinner=False)
 def scrape_penalty_goalkeepers(tm_slug, tm_code, season_id=None, is_cup=False):
     wb = "pokalwettbewerb" if is_cup else "wettbewerb"
     base_url = f"https://www.transfermarkt.us/{tm_slug}/elfmetertoeter/{wb}/{tm_code}/plus/1"
@@ -382,7 +382,7 @@ def scrape_penalty_goalkeepers(tm_slug, tm_code, season_id=None, is_cup=False):
     return pd.DataFrame(data)
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=21600, show_spinner=False)
 def load_multi_season_penalties(start_year, end_year, tm_slug, tm_code, has_gk_data, season_type, is_cup=False):
     taker_frames = []
     gk_frames = []
@@ -428,7 +428,7 @@ def load_multi_season_penalties(start_year, end_year, tm_slug, tm_code, has_gk_d
     return agg_takers, agg_gks
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=21600, show_spinner=False)
 def load_alltime_taker_penalties(tm_slug, tm_code, start_year, season_type, is_cup=False):
     taker_frames = []
     for yr in range(start_year, CURRENT_SEASON_END + 1):
@@ -472,7 +472,7 @@ def load_alltime_taker_penalties(tm_slug, tm_code, start_year, season_type, is_c
     return agg
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=21600, show_spinner=False)
 def load_alltime_gk_penalties(tm_slug, tm_code, start_year, season_type, is_cup=False):
     gk_frames = []
     for yr in range(start_year, CURRENT_SEASON_END + 1):
@@ -515,7 +515,7 @@ def load_alltime_gk_penalties(tm_slug, tm_code, start_year, season_type, is_cup=
     return agg
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=21600, show_spinner=False)
 def search_player_transfermarkt(query):
     url = f"https://www.transfermarkt.us/schnellsuche/ergebnis/schnellsuche?query={quote(query)}"
     headers = {
@@ -548,7 +548,7 @@ def search_player_transfermarkt(query):
     return results
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=21600, show_spinner=False)
 def scrape_player_career_penalties(player_slug, player_id):
     url = f"https://www.transfermarkt.us/{player_slug}/elfmetertore/spieler/{player_id}/saison_id//wettbewerb_id//plus/1"
     headers = {
