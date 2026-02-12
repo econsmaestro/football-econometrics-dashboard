@@ -711,12 +711,13 @@ try:
         multi_season = pd.DataFrame()
 
     if has_league_tables:
-        tab1, tab2, tab3, tab4, tab5 = st.tabs([
+        tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
             "League Table",
             "Statistical Analysis",
             "Visualizations",
             "Predictions & Insights",
             "Penalty Analysis",
+            "Team Insights",
         ])
     else:
         tab5, = st.tabs(["Penalty Analysis"])
@@ -1746,6 +1747,305 @@ try:
 
         st.divider()
         st.caption(f"Penalty data source: Transfermarkt ({selected_league}). Shot placement research data aggregated from academic studies on professional penalty kicks.")
+
+    if has_league_tables:
+        with tab6:
+            st.subheader(f"Team Insights — {selected_league}")
+            st.markdown(
+                "Select a team to see a personalised performance profile with historical trends, "
+                "peer benchmarking, and data-driven recommendations for improving their chances of winning the title."
+            )
+
+            if not multi_season.empty and "Squad" in multi_season.columns:
+                all_teams = sorted(multi_season["Squad"].unique().tolist())
+                n_teams = league_cfg["teams"]
+                games_per_season = league_cfg["games_per_season"]
+
+                selected_team = st.selectbox("Select a team", all_teams, key="team_insights_select")
+
+                team_data = multi_season[multi_season["Squad"] == selected_team].copy()
+                team_data = team_data.sort_values("Season_End")
+
+                if team_data.empty:
+                    st.warning(f"No historical data found for {selected_team}.")
+                else:
+                    n_seasons = len(team_data)
+                    latest = team_data.iloc[-1]
+                    latest_season = latest["Season"]
+
+                    st.markdown(f"### {selected_team} — Overview")
+                    st.markdown(f"**{n_seasons} seasons** of data in the {selected_league} (from the multi-season range selected in the sidebar).")
+
+                    avg_pts = team_data["Pts"].mean()
+                    avg_pos = team_data["Pos"].mean()
+                    avg_gf = team_data["GF"].mean() if "GF" in team_data.columns else 0
+                    avg_ga = team_data["GA"].mean() if "GA" in team_data.columns else 0
+                    avg_gd = team_data["GD"].mean() if "GD" in team_data.columns else 0
+                    avg_d = team_data["D"].mean() if "D" in team_data.columns else 0
+                    best_pos = int(team_data["Pos"].min())
+                    worst_pos = int(team_data["Pos"].max())
+                    titles = int((team_data["Pos"] == 1).sum())
+                    top_threshold = min(4, max(1, n_teams // 3)) if n_teams > 0 else 4
+                    relegation_spots = max(1, round(n_teams * 0.15)) if n_teams > 0 else 3
+                    relegation_pos = n_teams - relegation_spots + 1 if n_teams > 0 else 18
+                    top_finishes = int((team_data["Pos"] <= top_threshold).sum())
+
+                    kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+                    kpi1.metric("Avg. Points", f"{avg_pts:.1f}")
+                    kpi2.metric("Avg. Position", f"{avg_pos:.1f}")
+                    kpi3.metric("Titles Won", titles)
+                    kpi4.metric(f"Top {top_threshold} Finishes", top_finishes)
+
+                    kpi5, kpi6, kpi7, kpi8 = st.columns(4)
+                    kpi5.metric("Best Finish", f"{best_pos}")
+                    kpi6.metric("Worst Finish", f"{worst_pos}")
+                    kpi7.metric("Avg. GF/Season", f"{avg_gf:.1f}")
+                    kpi8.metric("Avg. GA/Season", f"{avg_ga:.1f}")
+
+                    st.divider()
+                    st.markdown("### Historical Trends")
+
+                    if "PPG" in team_data.columns and len(team_data) > 1:
+                        league_avg_ppg = multi_season.groupby("Season_End")["PPG"].mean().reset_index()
+                        league_avg_ppg.columns = ["Season_End", "League_Avg_PPG"]
+                        team_trend = team_data.merge(league_avg_ppg, on="Season_End", how="left")
+
+                        fig_ppg = go.Figure()
+                        fig_ppg.add_trace(go.Scatter(
+                            x=team_trend["Season"], y=team_trend["PPG"],
+                            mode="lines+markers", name=selected_team,
+                            line=dict(color="#2ecc71", width=3),
+                        ))
+                        fig_ppg.add_trace(go.Scatter(
+                            x=team_trend["Season"], y=team_trend["League_Avg_PPG"],
+                            mode="lines", name="League Average",
+                            line=dict(color="#95a5a6", width=2, dash="dash"),
+                        ))
+                        fig_ppg.update_layout(
+                            title="Points Per Game Over Time",
+                            xaxis_title="Season", yaxis_title="PPG",
+                            height=380, margin=dict(l=40, r=40, t=40, b=60),
+                        )
+                        st.plotly_chart(fig_ppg, use_container_width=True)
+
+                    if "GF" in team_data.columns and "GA" in team_data.columns and len(team_data) > 1:
+                        fig_goals = go.Figure()
+                        fig_goals.add_trace(go.Bar(
+                            x=team_data["Season"], y=team_data["GF"],
+                            name="Goals Scored", marker_color="#2ecc71",
+                        ))
+                        fig_goals.add_trace(go.Bar(
+                            x=team_data["Season"], y=-team_data["GA"],
+                            name="Goals Conceded", marker_color="#e74c3c",
+                        ))
+                        fig_goals.update_layout(
+                            title="Goals Scored vs Conceded",
+                            xaxis_title="Season", yaxis_title="Goals",
+                            barmode="relative", height=380,
+                            margin=dict(l=40, r=40, t=40, b=60),
+                        )
+                        st.plotly_chart(fig_goals, use_container_width=True)
+
+                    if len(team_data) > 1:
+                        fig_pos = go.Figure()
+                        fig_pos.add_trace(go.Scatter(
+                            x=team_data["Season"], y=team_data["Pos"],
+                            mode="lines+markers", name="League Position",
+                            line=dict(color="#3498db", width=3),
+                        ))
+                        fig_pos.update_layout(
+                            title="League Position Over Time",
+                            xaxis_title="Season", yaxis_title="Position",
+                            yaxis=dict(autorange="reversed"),
+                            height=350, margin=dict(l=40, r=40, t=40, b=60),
+                        )
+                        st.plotly_chart(fig_pos, use_container_width=True)
+
+                    st.divider()
+                    st.markdown("### Peer Benchmarking")
+
+                    league_season_avg = multi_season.groupby("Season_End").agg(
+                        Avg_Pts=("Pts", "mean"),
+                        Avg_GF=("GF", "mean") if "GF" in multi_season.columns else ("Pts", "mean"),
+                        Avg_GA=("GA", "mean") if "GA" in multi_season.columns else ("Pts", "mean"),
+                        Avg_GD=("GD", "mean") if "GD" in multi_season.columns else ("Pts", "mean"),
+                    ).reset_index()
+
+                    top4_avg = multi_season[multi_season["Pos"] <= top_threshold].groupby("Season_End").agg(
+                        Top4_Pts=("Pts", "mean"),
+                    ).reset_index()
+
+                    champ_avg = multi_season[multi_season["Pos"] == 1].groupby("Season_End").agg(
+                        Champ_Pts=("Pts", "mean"),
+                    ).reset_index()
+
+                    compare = team_data[["Season", "Season_End", "Pts", "Pos"]].merge(
+                        league_season_avg, on="Season_End", how="left"
+                    ).merge(top4_avg, on="Season_End", how="left").merge(
+                        champ_avg, on="Season_End", how="left"
+                    )
+
+                    if not compare.empty:
+                        latest_comp = compare.iloc[-1]
+                        diff_avg = latest_comp["Pts"] - latest_comp["Avg_Pts"]
+                        diff_top4 = latest_comp["Pts"] - latest_comp.get("Top4_Pts", latest_comp["Pts"])
+                        diff_champ = latest_comp["Pts"] - latest_comp.get("Champ_Pts", latest_comp["Pts"])
+
+                        bc1, bc2, bc3 = st.columns(3)
+                        bc1.metric(
+                            f"vs League Avg ({latest_season})",
+                            f"{latest_comp['Pts']:.0f} pts",
+                            f"{diff_avg:+.1f}",
+                        )
+                        bc2.metric(
+                            f"vs Top {top_threshold} Avg ({latest_season})",
+                            f"{latest_comp.get('Top4_Pts', 0):.0f} pts target",
+                            f"{diff_top4:+.1f}",
+                        )
+                        bc3.metric(
+                            f"vs Champion ({latest_season})",
+                            f"{latest_comp.get('Champ_Pts', 0):.0f} pts target",
+                            f"{diff_champ:+.1f}",
+                        )
+
+                    st.divider()
+                    st.markdown("### Trophy Target Analysis")
+                    st.markdown(
+                        "Based on historical data, these are the typical points thresholds "
+                        f"needed to achieve each target in the {selected_league}."
+                    )
+
+                    hist_champ_pts = multi_season[multi_season["Pos"] == 1]["Pts"]
+                    hist_top_pts = multi_season[multi_season["Pos"] <= top_threshold]["Pts"]
+                    hist_survival_pts = multi_season[multi_season["Pos"] < relegation_pos]["Pts"]
+                    hist_relegated_pts = multi_season[multi_season["Pos"] >= relegation_pos]["Pts"]
+
+                    if not hist_champ_pts.empty:
+                        tgt1, tgt2, tgt3 = st.columns(3)
+                        tgt1.metric("Title Target", f"{hist_champ_pts.mean():.0f} pts", f"Range: {hist_champ_pts.min():.0f}–{hist_champ_pts.max():.0f}")
+                        tgt2.metric(f"Top {top_threshold} Target", f"{hist_top_pts.quantile(0.5):.0f} pts", f"75th pct: {hist_top_pts.quantile(0.75):.0f}")
+                        if not hist_relegated_pts.empty:
+                            tgt3.metric("Survival Floor", f"{hist_relegated_pts.max():.0f} pts", f"Avg relegated: {hist_relegated_pts.mean():.0f}")
+
+                    league_avg_gf_val = multi_season["GF"].mean() if "GF" in multi_season.columns else 0
+                    league_avg_ga_val = multi_season["GA"].mean() if "GA" in multi_season.columns else 0
+                    league_avg_d = multi_season["D"].mean() if "D" in multi_season.columns else 0
+
+                    st.divider()
+                    st.markdown("### Strengths & Weaknesses")
+
+                    if "W" in team_data.columns and "D" in team_data.columns and "L" in team_data.columns:
+                        avg_w = team_data["W"].mean()
+                        avg_d = team_data["D"].mean()
+                        avg_l = team_data["L"].mean()
+
+                        league_avg_w = multi_season["W"].mean()
+                        league_avg_l = multi_season["L"].mean()
+
+                        strengths = []
+                        weaknesses = []
+
+                        if avg_gf > league_avg_gf_val * 1.15:
+                            strengths.append(f"Strong attack — averaging {avg_gf:.1f} goals/season vs league avg {league_avg_gf_val:.1f}")
+                        elif avg_gf < league_avg_gf_val * 0.85:
+                            weaknesses.append(f"Below-average attack — averaging {avg_gf:.1f} goals/season vs league avg {league_avg_gf_val:.1f}")
+
+                        if avg_ga < league_avg_ga_val * 0.85:
+                            strengths.append(f"Strong defense — conceding only {avg_ga:.1f} goals/season vs league avg {league_avg_ga_val:.1f}")
+                        elif avg_ga > league_avg_ga_val * 1.15:
+                            weaknesses.append(f"Leaky defense — conceding {avg_ga:.1f} goals/season vs league avg {league_avg_ga_val:.1f}")
+
+                        if avg_w > league_avg_w * 1.2:
+                            strengths.append(f"High win rate — averaging {avg_w:.1f} wins/season vs league avg {league_avg_w:.1f}")
+                        elif avg_w < league_avg_w * 0.8:
+                            weaknesses.append(f"Low win rate — averaging {avg_w:.1f} wins/season vs league avg {league_avg_w:.1f}")
+
+                        if avg_d > league_avg_d * 1.3:
+                            weaknesses.append(f"Too many draws — averaging {avg_d:.1f}/season vs league avg {league_avg_d:.1f}. Converting draws to wins is a key improvement area.")
+
+                        if avg_l < league_avg_l * 0.7:
+                            strengths.append(f"Rarely lose — averaging only {avg_l:.1f} losses/season vs league avg {league_avg_l:.1f}")
+                        elif avg_l > league_avg_l * 1.3:
+                            weaknesses.append(f"Lose too often — averaging {avg_l:.1f} losses/season vs league avg {league_avg_l:.1f}")
+
+                        if avg_gd > 0 and avg_pos > 4:
+                            weaknesses.append(f"Positive goal difference (+{avg_gd:.1f}) but average position is {avg_pos:.1f} — suggests inconsistency or poor results in tight games")
+
+                        if strengths:
+                            st.markdown("**Strengths:**")
+                            for s in strengths:
+                                st.markdown(f"- {s}")
+                        else:
+                            st.info("Performance is close to league averages across all metrics.")
+
+                        if weaknesses:
+                            st.markdown("**Areas for Improvement:**")
+                            for w in weaknesses:
+                                st.markdown(f"- {w}")
+
+                    st.divider()
+                    st.markdown("### Recommendations")
+
+                    if not hist_champ_pts.empty and not team_data.empty:
+                        latest_pts = latest["Pts"]
+                        title_target = hist_champ_pts.mean()
+                        top_target = hist_top_pts.quantile(0.5) if not hist_top_pts.empty else title_target
+                        pts_gap_title = title_target - latest_pts
+                        pts_gap_top = top_target - latest_pts
+
+                        recs = []
+
+                        if pts_gap_title > 0 and games_per_season > 0:
+                            extra_wins_needed = pts_gap_title / 3
+                            recs.append(
+                                f"To reach the historical title target of ~{title_target:.0f} points, "
+                                f"{selected_team} needs approximately **{extra_wins_needed:.1f} more wins per season** "
+                                f"(or equivalent points from draws)."
+                            )
+                        elif pts_gap_title <= 0:
+                            recs.append(
+                                f"{selected_team}'s latest points total ({latest_pts:.0f}) meets or exceeds "
+                                f"the historical title target ({title_target:.0f}). Consistency is key to defending this level."
+                            )
+
+                        if "GA" in multi_season.columns and avg_ga > league_avg_ga_val:
+                            goals_to_save = avg_ga - (league_avg_ga_val * 0.85)
+                            recs.append(
+                                f"Defensive improvement is a priority. Reducing goals conceded by ~{goals_to_save:.0f}/season "
+                                f"to elite levels would significantly boost points."
+                            )
+
+                        if "GF" in multi_season.columns and avg_gf < league_avg_gf_val:
+                            goals_to_add = (league_avg_gf_val * 1.15) - avg_gf
+                            recs.append(
+                                f"Attacking output needs improvement. Adding ~{goals_to_add:.0f} goals/season "
+                                f"would bring {selected_team} above the league average."
+                            )
+
+                        if "D" in multi_season.columns and avg_d > league_avg_d * 1.2:
+                            draws_to_convert = (avg_d - league_avg_d) * 0.5
+                            extra_pts = draws_to_convert * 2
+                            recs.append(
+                                f"Converting just {draws_to_convert:.0f} draws per season into wins would add "
+                                f"~{extra_pts:.0f} points — potentially the difference between mid-table and a top-{top_threshold} finish."
+                            )
+
+                        if not recs:
+                            recs.append(f"{selected_team} is performing at or above league benchmarks. Maintain consistency and depth.")
+
+                        for i, rec in enumerate(recs, 1):
+                            st.markdown(f"{i}. {rec}")
+
+                    st.divider()
+                    st.markdown("### Season-by-Season Record")
+                    display_team = team_data[["Season", "Pos", "Pld", "W", "D", "L", "GF", "GA", "GD", "Pts"]].copy()
+                    display_team = display_team[[c for c in display_team.columns if c in team_data.columns]]
+                    display_team.index = range(1, len(display_team) + 1)
+                    st.dataframe(display_team, use_container_width=True)
+
+                    st.caption(f"Data source: Wikipedia {selected_league} season articles. Points standardised to 3-for-a-win system.")
+            else:
+                st.warning("Multi-season data is not available. Adjust the season range in the sidebar.")
 
 except requests.exceptions.HTTPError:
     if season is not None:
