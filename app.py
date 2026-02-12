@@ -472,6 +472,179 @@ def load_alltime_gk_penalties(tm_slug, tm_code, start_year, season_type, is_cup=
     return agg
 
 
+@st.cache_data(ttl=3600, show_spinner=False)
+def search_player_transfermarkt(query):
+    url = f"https://www.transfermarkt.us/schnellsuche/ergebnis/schnellsuche?query={quote(query)}"
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/120.0.0.0 Safari/537.36"
+        )
+    }
+    response = requests.get(url, headers=headers, timeout=30)
+    response.raise_for_status()
+    soup = BeautifulSoup(response.text, "html.parser")
+    results = []
+    seen_ids = set()
+    for a_tag in soup.find_all("a", href=True):
+        href = a_tag.get("href", "")
+        if "/profil/spieler/" in href:
+            parts = href.rstrip("/").split("/")
+            try:
+                player_id = int(parts[-1])
+            except (ValueError, IndexError):
+                continue
+            if player_id in seen_ids:
+                continue
+            seen_ids.add(player_id)
+            slug = parts[1] if len(parts) > 1 else ""
+            name = a_tag.text.strip()
+            if name and len(name) > 1 and not name.startswith("http"):
+                results.append({"name": name, "slug": slug, "player_id": player_id})
+    return results
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def scrape_player_career_penalties(player_slug, player_id):
+    url = f"https://www.transfermarkt.us/{player_slug}/elfmetertore/spieler/{player_id}/saison_id//wettbewerb_id//plus/1"
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/120.0.0.0 Safari/537.36"
+        )
+    }
+    response = requests.get(url, headers=headers, timeout=30)
+    response.raise_for_status()
+    soup = BeautifulSoup(response.text, "html.parser")
+
+    total_scored = 0
+    header = soup.find("h2", string=lambda s: s and "Total penalties scored" in s if s else False)
+    if not header:
+        for h2 in soup.find_all("h2"):
+            if h2.text and "penalties scored" in h2.text.lower():
+                header = h2
+                break
+    if header:
+        import re as _re
+        m = _re.search(r"(\d+)", header.text)
+        if m:
+            total_scored = int(m.group(1))
+
+    data = []
+    tables = soup.find_all("table")
+    for table in tables:
+        header_row = table.find("tr")
+        if not header_row:
+            continue
+        headers = [th.text.strip().lower() for th in header_row.find_all(["th", "td"])]
+        col_map = {}
+        for i, h in enumerate(headers):
+            if "season" in h:
+                col_map["season"] = i
+            elif "competition" in h:
+                col_map["competition"] = i
+            elif "club" in h:
+                col_map["club"] = i
+            elif "date" in h:
+                col_map["date"] = i
+            elif "final" in h or "result" in h:
+                col_map["result"] = i
+            elif "minute" in h:
+                col_map["minute"] = i
+            elif "score" in h:
+                col_map["score"] = i
+            elif "goalkeeper" in h or "keeper" in h:
+                col_map["gk"] = i
+
+        if "season" not in col_map and "date" not in col_map:
+            opp_idx = None
+            for i, h in enumerate(headers):
+                if "wappen" in h or h == "":
+                    if opp_idx is None and i > col_map.get("club", 2):
+                        opp_idx = i
+            if opp_idx:
+                col_map["opponent_img"] = opp_idx
+
+        rows = table.find_all("tr")
+        for row in rows:
+            row_class = row.get("class", [])
+            if "odd" not in row_class and "even" not in row_class:
+                continue
+            cells = row.find_all(["td", "th"])
+            if len(cells) < 8:
+                continue
+
+            def get_text(idx):
+                if idx is not None and idx < len(cells):
+                    return cells[idx].text.strip()
+                return ""
+
+            def get_img_alt(idx):
+                if idx is not None and idx < len(cells):
+                    img = cells[idx].find("img")
+                    if img and img.get("alt"):
+                        return img["alt"]
+                    a = cells[idx].find("a")
+                    if a:
+                        return a.get("title", "") or a.text.strip()
+                return ""
+
+            def get_link_text(idx):
+                if idx is not None and idx < len(cells):
+                    a = cells[idx].find("a")
+                    if a:
+                        return a.text.strip()
+                    return cells[idx].text.strip()
+                return ""
+
+            season = get_text(col_map.get("season", 0))
+
+            comp_idx = col_map.get("competition", 1)
+            competition = get_link_text(comp_idx)
+            if not competition and comp_idx < len(cells):
+                competition = get_img_alt(comp_idx)
+
+            club_idx = col_map.get("club", 2)
+            club = get_img_alt(club_idx) or get_text(club_idx)
+
+            date = get_text(col_map.get("date", 3))
+
+            opp_idx = col_map.get("opponent_img")
+            if opp_idx is None:
+                opp_idx = col_map.get("date", 3) + 1
+            opponent = get_img_alt(opp_idx)
+
+            result_idx = col_map.get("result")
+            if result_idx is None:
+                result_idx = opp_idx + 1 if opp_idx else 5
+            result = get_link_text(result_idx)
+
+            minute = get_text(col_map.get("minute", 7))
+            score_at_time = get_text(col_map.get("score", 8))
+
+            gk_idx = col_map.get("gk")
+            if gk_idx is None:
+                gk_idx = len(cells) - 1
+            gk = get_link_text(gk_idx)
+
+            if season or date:
+                data.append({
+                    "Season": season,
+                    "Competition": competition,
+                    "Club": club,
+                    "Date": date,
+                    "Opponent": opponent,
+                    "Result": result,
+                    "Minute": minute,
+                    "Score": score_at_time,
+                    "Goalkeeper": gk,
+                })
+
+    return pd.DataFrame(data), total_scored
+
+
 ZONE_PROBS = {
     "Bottom-Left":  {"Taker %": 25.2, "GK Save %": 18.5},
     "Bottom-Centre": {"Taker %": 8.3, "GK Save %": 55.0},
@@ -1053,6 +1226,131 @@ try:
             )
         else:
             st.warning("Could not load penalty taker records.")
+
+        st.divider()
+
+        st.subheader("Career Penalty Lookup (All Competitions)")
+        st.markdown(
+            "Search for any player by name to see their **entire career penalty record** across all top-flight "
+            "competitions worldwide — including leagues, Champions League, Europa League, international matches, "
+            "and domestic cups. Data sourced directly from Transfermarkt's individual player records."
+        )
+
+        @st.fragment
+        def career_lookup_fragment():
+            career_search = st.text_input(
+                "Search for a player (career penalties)",
+                "",
+                key="career_pen_search",
+                placeholder="e.g. Szoboszlai, Salah, Lewandowski, Messi..."
+            )
+            if career_search.strip():
+                search_q = career_search.strip()
+                with st.spinner(f"Searching Transfermarkt for '{search_q}'..."):
+                    try:
+                        search_results = search_player_transfermarkt(search_q)
+                    except Exception:
+                        search_results = []
+
+                if not search_results:
+                    st.warning(f"No players found for '{search_q}'. Try a different spelling or shorter name.")
+                else:
+                    player_options = {
+                        f"{r['name']} (ID: {r['player_id']})": r for r in search_results[:10]
+                    }
+                    if len(player_options) == 1:
+                        selected_key = list(player_options.keys())[0]
+                    else:
+                        selected_key = st.selectbox(
+                            "Select player",
+                            list(player_options.keys()),
+                            key="career_player_select"
+                        )
+
+                    selected_player = player_options[selected_key]
+                    with st.spinner(f"Loading career penalty data for {selected_player['name']}..."):
+                        try:
+                            career_df, total_scored = scrape_player_career_penalties(
+                                selected_player["slug"], selected_player["player_id"]
+                            )
+                        except Exception:
+                            career_df = pd.DataFrame()
+                            total_scored = 0
+
+                    if career_df.empty:
+                        st.info(f"No penalty goals found for {selected_player['name']}. They may not have scored any career penalties.")
+                    else:
+                        st.success(f"**{selected_player['name']}** — **{total_scored}** career penalty goals scored across all competitions")
+
+                        comp_counts = career_df["Competition"].value_counts().reset_index()
+                        comp_counts.columns = ["Competition", "Penalties Scored"]
+                        club_counts = career_df["Club"].value_counts().reset_index()
+                        club_counts.columns = ["Club", "Penalties Scored"]
+
+                        c1, c2 = st.columns(2)
+                        with c1:
+                            st.markdown("**By Competition**")
+                            st.dataframe(comp_counts, use_container_width=True, hide_index=True)
+                        with c2:
+                            st.markdown("**By Club/Country**")
+                            st.dataframe(club_counts, use_container_width=True, hide_index=True)
+
+                        gk_counts = career_df["Goalkeeper"].value_counts().reset_index()
+                        gk_counts.columns = ["Goalkeeper", "Times Beaten"]
+                        gk_counts = gk_counts[gk_counts["Goalkeeper"].str.strip().astype(bool)]
+                        if not gk_counts.empty:
+                            st.markdown("**Goalkeepers Beaten Most Often**")
+                            st.dataframe(gk_counts.head(10), use_container_width=True, hide_index=True)
+
+                        if len(comp_counts) > 1:
+                            fig_comp = go.Figure(data=[
+                                go.Bar(
+                                    x=comp_counts["Competition"],
+                                    y=comp_counts["Penalties Scored"],
+                                    marker_color="#2ecc71"
+                                )
+                            ])
+                            fig_comp.update_layout(
+                                title=f"{selected_player['name']} — Penalty Goals by Competition",
+                                xaxis_title="Competition",
+                                yaxis_title="Penalties Scored",
+                                height=350,
+                                margin=dict(l=40, r=40, t=40, b=80),
+                            )
+                            st.plotly_chart(fig_comp, use_container_width=True)
+
+                        season_counts = career_df["Season"].value_counts().sort_index().reset_index()
+                        season_counts.columns = ["Season", "Penalties Scored"]
+                        if len(season_counts) > 1:
+                            fig_season = go.Figure(data=[
+                                go.Bar(
+                                    x=season_counts["Season"],
+                                    y=season_counts["Penalties Scored"],
+                                    marker_color="#3498db"
+                                )
+                            ])
+                            fig_season.update_layout(
+                                title=f"{selected_player['name']} — Penalty Goals by Season",
+                                xaxis_title="Season",
+                                yaxis_title="Penalties Scored",
+                                height=350,
+                                margin=dict(l=40, r=40, t=40, b=80),
+                            )
+                            st.plotly_chart(fig_season, use_container_width=True)
+
+                        st.markdown("**Full Career Penalty Record (All Scored Penalties)**")
+                        display_df = career_df.copy()
+                        display_df.index = range(1, len(display_df) + 1)
+                        st.dataframe(display_df, use_container_width=True, height=min(600, max(100, 35 + len(display_df) * 35)))
+
+                        st.caption(
+                            "This table shows all penalties **scored** (converted) by this player across their entire career "
+                            "(all competitions including leagues, cups, and international matches). "
+                            "Missed/saved penalties are not included as Transfermarkt only provides scored penalty details at the individual player level. "
+                            "Data source: Transfermarkt individual player penalty records."
+                        )
+
+        career_lookup_fragment()
 
         st.divider()
 

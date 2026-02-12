@@ -10,6 +10,7 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
+- **2026-02-12**: Added Career Penalty Lookup feature — search any player by name to see their entire career penalty record across all top-flight competitions worldwide (not just the selected league). Uses Transfermarkt player search + individual player penalty page scraping with header-based column mapping for robust parsing. Shows competition/club breakdowns, charts, goalkeeper-beaten stats, and full detailed penalty record.
 - **2026-02-12**: Added 7 cup/tournament competitions (Europa League, Conference League, FIFA World Cup, UEFA Euros, AFC Asian Cup, Copa América, CONMEBOL Libertadores) with proper Transfermarkt `pokalwettbewerb` URL handling. Reorganized sidebar with category-grouped Competition dropdown. Tournaments show penalty-only tab.
 - **2026-02-12**: Expanded to 23 leagues with all-time penalty taker/GK records. Added game-theory adjusted penalty analysis, dynamic tier binning, URL-encoded Wikipedia names for non-ASCII leagues. Champions League shows penalty-only tab; leagues without GK data gracefully disable predictor.
 - **2026-02-12**: Added Penalty Analysis tab (tab 5) with Transfermarkt scraping for penalty taker/goalkeeper stats, shot placement zone visualization, Bayesian prediction model, game-theory strategic adjustment, and goalkeeper diving advice (all from GK's perspective).
