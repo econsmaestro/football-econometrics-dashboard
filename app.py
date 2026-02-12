@@ -616,14 +616,18 @@ try:
             col_pred2.metric("95% CI Lower", f"{pi[0]:.1f}")
             col_pred3.metric("95% CI Upper", f"{pi[1]:.1f}")
 
-            recent = multi_season[multi_season["Season_End"] == multi_season["Season_End"].max()]
+            completed_seasons = multi_season[multi_season["Season_End"] < CURRENT_SEASON_END]
+            if completed_seasons.empty:
+                completed_seasons = multi_season
+            recent = completed_seasons[completed_seasons["Season_End"] == completed_seasons["Season_End"].max()]
             if not recent.empty:
                 closest = recent.iloc[(recent["Pts"] - predicted_pts).abs().argsort()[:1]]
+                recent_label = f"{int(closest['Season_End'].values[0]) - 1}-{str(int(closest['Season_End'].values[0]))[2:]}"
                 st.markdown(
                     f"A team with {pred_gf} goals scored and {pred_ga} conceded would be expected to "
                     f"finish with approximately **{predicted_pts:.0f} points**, similar to "
                     f"**{closest['Squad'].values[0]}** ({closest['Pts'].values[0]:.0f} pts) "
-                    f"in the most recent season."
+                    f"in the {recent_label} season."
                 )
 
         st.divider()
