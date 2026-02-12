@@ -825,22 +825,38 @@ try:
 
         if not agg_takers.empty:
             st.subheader("Penalty Takers")
-            st.markdown(f"**{len(agg_takers)} players** with penalty records across the selected seasons.")
-            takers_display = agg_takers.sort_values("Penalties", ascending=False).reset_index(drop=True).copy()
-            takers_display["Est. Saved"] = (takers_display["Missed"] * SAVED_SHARE_OF_MISSES).round(0).astype(int)
-            takers_display["Est. Off Target"] = takers_display["Missed"] - takers_display["Est. Saved"]
-            takers_display["Saved %"] = np.where(
-                takers_display["Penalties"] > 0,
-                (takers_display["Est. Saved"] / takers_display["Penalties"] * 100).round(1),
+            st.markdown(
+                f"**{len(agg_takers)} players** with penalty records across the selected seasons. "
+                "Use the search box to find a specific taker."
+            )
+
+            takers_full = agg_takers.copy()
+            takers_full["Est. Saved"] = (takers_full["Missed"] * SAVED_SHARE_OF_MISSES).round(0).astype(int)
+            takers_full["Est. Off Target"] = takers_full["Missed"] - takers_full["Est. Saved"]
+            takers_full["Saved %"] = np.where(
+                takers_full["Penalties"] > 0,
+                (takers_full["Est. Saved"] / takers_full["Penalties"] * 100).round(1),
                 0.0,
             )
-            takers_display["Off Target %"] = np.where(
-                takers_display["Penalties"] > 0,
-                (takers_display["Est. Off Target"] / takers_display["Penalties"] * 100).round(1),
+            takers_full["Off Target %"] = np.where(
+                takers_full["Penalties"] > 0,
+                (takers_full["Est. Off Target"] / takers_full["Penalties"] * 100).round(1),
                 0.0,
             )
-            takers_display.index += 1
-            st.dataframe(takers_display, use_container_width=True, height=400)
+
+            @st.fragment
+            def taker_search_fragment():
+                taker_search = st.text_input("Search for a penalty taker", "", key="taker_search", placeholder="e.g. Salah, Haaland, Fernandes...")
+                takers_sorted = takers_full.sort_values("Penalties", ascending=False).reset_index(drop=True)
+                if taker_search.strip():
+                    search_term = taker_search.strip().lower()
+                    takers_sorted = takers_sorted[takers_sorted["Player"].str.lower().str.contains(search_term, na=False)]
+                takers_sorted.index += 1
+                st.markdown(f"**{len(takers_sorted)} taker{'s' if len(takers_sorted) != 1 else ''}** found.")
+                table_height = min(500, max(80, 35 + len(takers_sorted) * 35))
+                st.dataframe(takers_sorted, use_container_width=True, height=table_height)
+            taker_search_fragment()
+
             st.caption(
                 "\"Est. Saved\" and \"Est. Off Target\" are estimated from the \"Missed\" total using "
                 "league-wide research (roughly 57% of missed penalties are saved by the goalkeeper, "
