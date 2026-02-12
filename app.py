@@ -1891,14 +1891,29 @@ try:
                     latest_season = latest["Season"]
 
                     st.markdown(f"### {selected_team} — Overview")
+
+                    latest_pld = int(latest["Pld"]) if "Pld" in latest.index else games_per_season
+                    season_complete = latest_pld >= games_per_season if games_per_season > 0 else True
+                    completed_team_data = team_data[team_data["Pld"] >= games_per_season] if "Pld" in team_data.columns and games_per_season > 0 else team_data
+                    completed_multi = multi_season[multi_season["Pld"] >= games_per_season] if "Pld" in multi_season.columns and games_per_season > 0 else multi_season
+
+                    if not season_complete:
+                        st.info(
+                            f"The **{latest_season}** season is still in progress ({latest_pld} of {games_per_season} games played). "
+                            f"Benchmarking and recommendations use completed seasons only for fair comparison."
+                        )
+
                     st.markdown(f"**{n_seasons} seasons** of data in the {selected_league} (from the multi-season range selected in the sidebar).")
 
-                    avg_pts = team_data["Pts"].mean()
-                    avg_pos = team_data["Pos"].mean()
-                    avg_gf = team_data["GF"].mean() if "GF" in team_data.columns else 0
-                    avg_ga = team_data["GA"].mean() if "GA" in team_data.columns else 0
-                    avg_gd = team_data["GD"].mean() if "GD" in team_data.columns else 0
-                    avg_d = team_data["D"].mean() if "D" in team_data.columns else 0
+                    bench_data = completed_team_data if not completed_team_data.empty else team_data
+                    bench_multi = completed_multi if not completed_multi.empty else multi_season
+
+                    avg_pts = bench_data["Pts"].mean()
+                    avg_pos = bench_data["Pos"].mean()
+                    avg_gf = bench_data["GF"].mean() if "GF" in bench_data.columns else 0
+                    avg_ga = bench_data["GA"].mean() if "GA" in bench_data.columns else 0
+                    avg_gd = bench_data["GD"].mean() if "GD" in bench_data.columns else 0
+                    avg_d = bench_data["D"].mean() if "D" in bench_data.columns else 0
                     best_pos = int(team_data["Pos"].min())
                     worst_pos = int(team_data["Pos"].max())
                     titles = int((team_data["Pos"] == 1).sum())
@@ -2093,7 +2108,7 @@ try:
                     st.markdown("### Historical Trends")
 
                     if "PPG" in team_data.columns and len(team_data) > 1:
-                        league_avg_ppg = multi_season.groupby("Season_End")["PPG"].mean().reset_index()
+                        league_avg_ppg = bench_multi.groupby("Season_End")["PPG"].mean().reset_index()
                         league_avg_ppg.columns = ["Season_End", "League_Avg_PPG"]
                         team_trend = team_data.merge(league_avg_ppg, on="Season_End", how="left")
 
@@ -2151,22 +2166,23 @@ try:
                     st.divider()
                     st.markdown("### Peer Benchmarking")
 
-                    league_season_avg = multi_season.groupby("Season_End").agg(
+                    league_season_avg = bench_multi.groupby("Season_End").agg(
                         Avg_Pts=("Pts", "mean"),
-                        Avg_GF=("GF", "mean") if "GF" in multi_season.columns else ("Pts", "mean"),
-                        Avg_GA=("GA", "mean") if "GA" in multi_season.columns else ("Pts", "mean"),
-                        Avg_GD=("GD", "mean") if "GD" in multi_season.columns else ("Pts", "mean"),
+                        Avg_GF=("GF", "mean") if "GF" in bench_multi.columns else ("Pts", "mean"),
+                        Avg_GA=("GA", "mean") if "GA" in bench_multi.columns else ("Pts", "mean"),
+                        Avg_GD=("GD", "mean") if "GD" in bench_multi.columns else ("Pts", "mean"),
                     ).reset_index()
 
-                    top4_avg = multi_season[multi_season["Pos"] <= top_threshold].groupby("Season_End").agg(
+                    top4_avg = bench_multi[bench_multi["Pos"] <= top_threshold].groupby("Season_End").agg(
                         Top4_Pts=("Pts", "mean"),
                     ).reset_index()
 
-                    champ_avg = multi_season[multi_season["Pos"] == 1].groupby("Season_End").agg(
+                    champ_avg = bench_multi[bench_multi["Pos"] == 1].groupby("Season_End").agg(
                         Champ_Pts=("Pts", "mean"),
                     ).reset_index()
 
-                    compare = team_data[["Season", "Season_End", "Pts", "Pos"]].merge(
+                    compare_source = completed_team_data if not completed_team_data.empty else team_data
+                    compare = compare_source[["Season", "Season_End", "Pts", "Pos"]].merge(
                         league_season_avg, on="Season_End", how="left"
                     ).merge(top4_avg, on="Season_End", how="left").merge(
                         champ_avg, on="Season_End", how="left"
@@ -2174,23 +2190,24 @@ try:
 
                     if not compare.empty:
                         latest_comp = compare.iloc[-1]
+                        bench_season_label = latest_comp["Season"]
                         diff_avg = latest_comp["Pts"] - latest_comp["Avg_Pts"]
                         diff_top4 = latest_comp["Pts"] - latest_comp.get("Top4_Pts", latest_comp["Pts"])
                         diff_champ = latest_comp["Pts"] - latest_comp.get("Champ_Pts", latest_comp["Pts"])
 
                         bc1, bc2, bc3 = st.columns(3)
                         bc1.metric(
-                            f"vs League Avg ({latest_season})",
+                            f"vs League Avg ({bench_season_label})",
                             f"{latest_comp['Pts']:.0f} pts",
                             f"{diff_avg:+.1f}",
                         )
                         bc2.metric(
-                            f"vs Top {top_threshold} Avg ({latest_season})",
+                            f"vs Top {top_threshold} Avg ({bench_season_label})",
                             f"{latest_comp.get('Top4_Pts', 0):.0f} pts target",
                             f"{diff_top4:+.1f}",
                         )
                         bc3.metric(
-                            f"vs Champion ({latest_season})",
+                            f"vs Champion ({bench_season_label})",
                             f"{latest_comp.get('Champ_Pts', 0):.0f} pts target",
                             f"{diff_champ:+.1f}",
                         )
@@ -2202,10 +2219,10 @@ try:
                         f"needed to achieve each target in the {selected_league}."
                     )
 
-                    hist_champ_pts = multi_season[multi_season["Pos"] == 1]["Pts"]
-                    hist_top_pts = multi_season[multi_season["Pos"] <= top_threshold]["Pts"]
-                    hist_survival_pts = multi_season[multi_season["Pos"] < relegation_pos]["Pts"]
-                    hist_relegated_pts = multi_season[multi_season["Pos"] >= relegation_pos]["Pts"]
+                    hist_champ_pts = bench_multi[bench_multi["Pos"] == 1]["Pts"]
+                    hist_top_pts = bench_multi[bench_multi["Pos"] <= top_threshold]["Pts"]
+                    hist_survival_pts = bench_multi[bench_multi["Pos"] < relegation_pos]["Pts"]
+                    hist_relegated_pts = bench_multi[bench_multi["Pos"] >= relegation_pos]["Pts"]
 
                     if not hist_champ_pts.empty:
                         tgt1, tgt2, tgt3 = st.columns(3)
@@ -2214,9 +2231,9 @@ try:
                         if not hist_relegated_pts.empty:
                             tgt3.metric("Survival Floor", f"{hist_relegated_pts.max():.0f} pts", f"Avg relegated: {hist_relegated_pts.mean():.0f}")
 
-                    league_avg_gf_val = multi_season["GF"].mean() if "GF" in multi_season.columns else 0
-                    league_avg_ga_val = multi_season["GA"].mean() if "GA" in multi_season.columns else 0
-                    league_avg_d = multi_season["D"].mean() if "D" in multi_season.columns else 0
+                    league_avg_gf_val = bench_multi["GF"].mean() if "GF" in bench_multi.columns else 0
+                    league_avg_ga_val = bench_multi["GA"].mean() if "GA" in bench_multi.columns else 0
+                    league_avg_d = bench_multi["D"].mean() if "D" in bench_multi.columns else 0
 
                     st.divider()
                     st.markdown("### Strengths & Weaknesses")
@@ -2224,8 +2241,8 @@ try:
                     has_wdl = "W" in team_data.columns and "D" in team_data.columns and "L" in team_data.columns
                     has_goals = "GF" in team_data.columns and "GA" in team_data.columns
 
-                    champ_data = multi_season[multi_season["Pos"] == 1]
-                    top_n_data = multi_season[multi_season["Pos"] <= top_threshold]
+                    champ_data = bench_multi[bench_multi["Pos"] == 1]
+                    top_n_data = bench_multi[bench_multi["Pos"] <= top_threshold]
                     champ_avg_gf = champ_data["GF"].mean() if has_goals and not champ_data.empty else 0
                     champ_avg_ga = champ_data["GA"].mean() if has_goals and not champ_data.empty else 0
                     champ_avg_w = champ_data["W"].mean() if has_wdl and not champ_data.empty else 0
@@ -2235,10 +2252,10 @@ try:
                     top_n_avg_ga = top_n_data["GA"].mean() if has_goals and not top_n_data.empty else 0
 
                     if has_wdl:
-                        avg_w = team_data["W"].mean()
-                        league_avg_w = multi_season["W"].mean()
-                        league_avg_l = multi_season["L"].mean()
-                        avg_l = team_data["L"].mean()
+                        avg_w = bench_data["W"].mean()
+                        league_avg_w = bench_multi["W"].mean()
+                        league_avg_l = bench_multi["L"].mean()
+                        avg_l = bench_data["L"].mean()
 
                     strengths = []
                     weaknesses = []
@@ -2375,21 +2392,21 @@ try:
                                 f"preparation for 'six-pointer' matches and tighter game management when leading are needed."
                             )
 
-                    if len(team_data) >= 3:
-                        recent_3 = team_data.tail(3)
-                        older = team_data.iloc[:-3] if len(team_data) > 3 else team_data
+                    if len(bench_data) >= 3:
+                        recent_3 = bench_data.tail(3)
+                        older = bench_data.iloc[:-3] if len(bench_data) > 3 else bench_data
                         if not older.empty:
                             recent_pts = recent_3["Pts"].mean()
                             older_pts = older["Pts"].mean()
                             pts_trend = recent_pts - older_pts
                             if pts_trend > 5:
                                 strengths.append(
-                                    f"**Improving trajectory** — averaging {recent_pts:.0f} pts in the last 3 seasons vs {older_pts:.0f} earlier. "
+                                    f"**Improving trajectory** — averaging {recent_pts:.0f} pts in the last 3 completed seasons vs {older_pts:.0f} earlier. "
                                     f"The current project is heading in the right direction with +{pts_trend:.0f} pts improvement."
                                 )
                             elif pts_trend < -5:
                                 weaknesses.append(
-                                    f"**Declining trajectory** — averaging {recent_pts:.0f} pts in the last 3 seasons vs {older_pts:.0f} earlier. "
+                                    f"**Declining trajectory** — averaging {recent_pts:.0f} pts in the last 3 completed seasons vs {older_pts:.0f} earlier. "
                                     f"A drop of {abs(pts_trend):.0f} pts suggests stagnation or regression — could be ageing squad, "
                                     f"manager bounce wearing off, or failure to reinvest. A squad refresh or tactical rethink may be needed."
                                 )
@@ -2414,8 +2431,9 @@ try:
                         f"based on where the data shows the biggest gaps compared to title-winning and top-{top_threshold} teams."
                     )
 
-                    if not hist_champ_pts.empty and not team_data.empty:
-                        latest_pts = latest["Pts"]
+                    if not hist_champ_pts.empty and not bench_data.empty:
+                        bench_latest = bench_data.iloc[-1]
+                        latest_pts = bench_latest["Pts"]
                         title_target = hist_champ_pts.mean()
                         top_target = hist_top_pts.quantile(0.5) if not hist_top_pts.empty else title_target
                         pts_gap_title = title_target - latest_pts
@@ -2447,7 +2465,7 @@ try:
                                 )
                         elif pts_gap_title <= 0:
                             recs.append(
-                                f"**Maintaining the standard.** {selected_team}'s latest total ({latest_pts:.0f} pts) matches or exceeds "
+                                f"**Maintaining the standard.** {selected_team}'s latest completed season ({latest_pts:.0f} pts) matches or exceeds "
                                 f"the historical title target ({title_target:.0f}). The priority is squad depth and renewal — "
                                 f"replacing ageing starters before they decline, keeping wage structure sustainable, and avoiding complacency."
                             )
@@ -2509,8 +2527,8 @@ try:
                                 f"would let the team build from the back safely."
                             )
 
-                        if len(team_data) >= 3:
-                            recent_3_pts = team_data.tail(3)["Pts"].mean()
+                        if len(bench_data) >= 3:
+                            recent_3_pts = bench_data.tail(3)["Pts"].mean()
                             if recent_3_pts < avg_pts - 5:
                                 recs.append(
                                     f"**Arrest the decline.** Recent form ({recent_3_pts:.0f} pts avg over last 3 seasons) is below "
