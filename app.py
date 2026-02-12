@@ -207,8 +207,10 @@ def fetch_season_data(season_val, wiki_pattern, wiki_name, season_type):
             df["Season"] = format_season_label(season_val, season_type)
             df["Season_End"] = season_val
 
+            if "W" in df.columns and "D" in df.columns:
+                df["Pts"] = df["W"] * 3 + df["D"] * 1
             if "Pld" in df.columns and "Pts" in df.columns:
-                df["PPG"] = (df["Pts"] / df["Pld"]).round(3)
+                df["PPG"] = (df["Pts"] / df["Pld"]).round(2)
             if "Pld" in df.columns and "W" in df.columns:
                 df["Win%"] = ((df["W"] / df["Pld"]) * 100).round(1)
             if "Pld" in df.columns and "GF" in df.columns:
