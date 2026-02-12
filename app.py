@@ -112,6 +112,16 @@ with st.sidebar:
     selected_league = st.selectbox("Competition", LEAGUE_OPTIONS, index=0, format_func=_format_league)
     league_cfg = LEAGUE_CONFIG[selected_league]
 
+    _logo_code = league_cfg["tm_code"].lower()
+    _logo_url = f"https://tmssl.akamaized.net/images/logo/header/{_logo_code}.png?lm=1"
+    st.markdown(
+        f'<div style="text-align:center;padding:8px 0;">'
+        f'<img src="{_logo_url}" alt="{selected_league}" style="max-height:80px;max-width:160px;">'
+        f'<div style="font-size:0.85em;color:#aaa;margin-top:4px;">{selected_league}</div>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+
     is_tournament = league_cfg.get("is_cup", False)
 
     if not is_tournament:
