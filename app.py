@@ -10,8 +10,147 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import statsmodels.api as sm
 from scipy import stats
+import psycopg2
+import os
+import uuid
+from datetime import datetime, timedelta
 
 st.set_page_config(page_title="Football Econometrics Dashboard", layout="wide")
+
+DATABASE_URL = os.environ.get("DATABASE_URL")
+
+
+def get_db_conn():
+    return psycopg2.connect(DATABASE_URL)
+
+
+def init_db():
+    conn = get_db_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS reviews (
+            id SERIAL PRIMARY KEY,
+            username VARCHAR(100) NOT NULL,
+            rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5),
+            comment TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS page_visits (
+            id SERIAL PRIMARY KEY,
+            session_id VARCHAR(100) NOT NULL,
+            page_name VARCHAR(200) NOT NULL,
+            visited_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+    """)
+    conn.commit()
+    cur.close()
+    conn.close()
+
+
+init_db()
+
+
+def record_visit(session_id, page_name):
+    try:
+        conn = get_db_conn()
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO page_visits (session_id, page_name) VALUES (%s, %s)",
+            (session_id, page_name),
+        )
+        conn.commit()
+        cur.close()
+        conn.close()
+    except Exception:
+        pass
+
+
+def submit_review(username, rating, comment):
+    conn = get_db_conn()
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO reviews (username, rating, comment) VALUES (%s, %s, %s)",
+        (username, rating, comment if comment else None),
+    )
+    conn.commit()
+    cur.close()
+    conn.close()
+
+
+def get_good_reviews():
+    conn = get_db_conn()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT username, rating, comment, created_at FROM reviews WHERE rating >= 4 ORDER BY created_at DESC LIMIT 20"
+    )
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    return rows
+
+
+def get_analytics_data():
+    conn = get_db_conn()
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(DISTINCT session_id) FROM page_visits")
+    total_visitors = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM page_visits")
+    total_views = cur.fetchone()[0]
+    cur.execute("""
+        SELECT DATE(visited_at) as day, COUNT(DISTINCT session_id) as visitors, COUNT(*) as views
+        FROM page_visits
+        WHERE visited_at >= CURRENT_DATE - INTERVAL '30 days'
+        GROUP BY DATE(visited_at)
+        ORDER BY day
+    """)
+    daily_data = cur.fetchall()
+    cur.execute("""
+        SELECT page_name, COUNT(*) as views
+        FROM page_visits
+        GROUP BY page_name
+        ORDER BY views DESC
+    """)
+    page_data = cur.fetchall()
+    cur.execute("""
+        SELECT COUNT(DISTINCT session_id)
+        FROM page_visits
+        WHERE visited_at >= CURRENT_DATE
+    """)
+    today_visitors = cur.fetchone()[0]
+    cur.execute("""
+        SELECT COUNT(DISTINCT session_id)
+        FROM page_visits
+        WHERE visited_at >= CURRENT_DATE - INTERVAL '7 days'
+    """)
+    week_visitors = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM reviews")
+    total_reviews = cur.fetchone()[0]
+    cur.execute("SELECT AVG(rating) FROM reviews")
+    avg_rating_val = cur.fetchone()[0]
+    cur.execute("""
+        SELECT rating, COUNT(*) FROM reviews GROUP BY rating ORDER BY rating
+    """)
+    rating_dist = cur.fetchall()
+    cur.close()
+    conn.close()
+    return {
+        "total_visitors": total_visitors,
+        "total_views": total_views,
+        "daily_data": daily_data,
+        "page_data": page_data,
+        "today_visitors": today_visitors,
+        "week_visitors": week_visitors,
+        "total_reviews": total_reviews,
+        "avg_rating": avg_rating_val or 0,
+        "rating_dist": rating_dist,
+    }
+
+
+if "session_id" not in st.session_state:
+    st.session_state.session_id = str(uuid.uuid4())
+
+if "current_page" not in st.session_state:
+    st.session_state.current_page = "home"
 
 LEAGUE_CONFIG = {
     "Premier League": {"tm_slug": "premier-league", "tm_code": "GB1", "wiki_pattern": "split", "wiki_name": "Premier_League", "start_year": 1992, "teams": 20, "has_gk_data": True, "season_type": "split", "games_per_season": 38, "is_cup": False, "category": "Europe"},
@@ -70,6 +209,15 @@ for _cat in CATEGORY_ORDER:
             LEAGUE_OPTIONS.append(_name)
 
 with st.sidebar:
+    st.header("Navigation")
+    nav_page = st.radio(
+        "Go to",
+        ["Dashboard", "Analytics"],
+        index=0,
+        key="nav_page",
+        horizontal=True,
+    )
+    st.divider()
     st.header("Controls")
 
     _LEAGUE_ICONS = {
@@ -172,8 +320,131 @@ if not is_tournament:
 else:
     caption_range = f"{league_cfg['start_year']}-present"
 
+
+def render_star_display(rating):
+    filled = int(rating)
+    empty = 5 - filled
+    return '<span style="color: #FFD700; font-size: 1.3em;">' + ("&#9733;" * filled) + ("&#9734;" * empty) + "</span>"
+
+
+if nav_page == "Analytics":
+    record_visit(st.session_state.session_id, "Analytics")
+    st.title("Web Analytics")
+    st.caption("Visitor traffic and usage statistics for this dashboard")
+
+    analytics = get_analytics_data()
+
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("Total Unique Visitors", f"{analytics['total_visitors']:,}")
+    with col2:
+        st.metric("Total Page Views", f"{analytics['total_views']:,}")
+    with col3:
+        st.metric("Today's Visitors", f"{analytics['today_visitors']:,}")
+    with col4:
+        st.metric("This Week's Visitors", f"{analytics['week_visitors']:,}")
+
+    st.divider()
+
+    col_left, col_right = st.columns(2)
+
+    with col_left:
+        st.subheader("Daily Traffic (Last 30 Days)")
+        if analytics["daily_data"]:
+            daily_df = pd.DataFrame(analytics["daily_data"], columns=["Date", "Visitors", "Page Views"])
+            daily_df["Date"] = pd.to_datetime(daily_df["Date"])
+            fig_traffic = go.Figure()
+            fig_traffic.add_trace(go.Scatter(
+                x=daily_df["Date"], y=daily_df["Visitors"],
+                mode="lines+markers", name="Unique Visitors",
+                line=dict(color="#1f77b4", width=2),
+            ))
+            fig_traffic.add_trace(go.Scatter(
+                x=daily_df["Date"], y=daily_df["Page Views"],
+                mode="lines+markers", name="Page Views",
+                line=dict(color="#ff7f0e", width=2),
+            ))
+            fig_traffic.update_layout(
+                xaxis_title="Date", yaxis_title="Count",
+                template="plotly_dark", height=350,
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+            )
+            st.plotly_chart(fig_traffic, use_container_width=True)
+        else:
+            st.info("No traffic data yet. Check back later!")
+
+    with col_right:
+        st.subheader("Most Visited Pages")
+        if analytics["page_data"]:
+            page_df = pd.DataFrame(analytics["page_data"], columns=["Page", "Views"])
+            fig_pages = px.bar(
+                page_df, x="Views", y="Page", orientation="h",
+                color="Views", color_continuous_scale="Blues",
+                template="plotly_dark",
+            )
+            fig_pages.update_layout(height=350, showlegend=False, coloraxis_showscale=False)
+            st.plotly_chart(fig_pages, use_container_width=True)
+        else:
+            st.info("No page data yet.")
+
+    st.divider()
+
+    col_rev1, col_rev2 = st.columns(2)
+    with col_rev1:
+        st.subheader("Review Statistics")
+        st.metric("Total Reviews", analytics["total_reviews"])
+        if analytics["avg_rating"]:
+            avg_r = float(analytics["avg_rating"])
+            st.markdown(f"**Average Rating:** {avg_r:.1f} / 5.0 {render_star_display(round(avg_r))}", unsafe_allow_html=True)
+
+    with col_rev2:
+        st.subheader("Rating Distribution")
+        if analytics["rating_dist"]:
+            rd_df = pd.DataFrame(analytics["rating_dist"], columns=["Rating", "Count"])
+            rd_df["Rating"] = rd_df["Rating"].apply(lambda r: f"{r} Star{'s' if r > 1 else ''}")
+            fig_rd = px.pie(rd_df, values="Count", names="Rating", template="plotly_dark",
+                           color_discrete_sequence=px.colors.sequential.YlOrRd_r)
+            fig_rd.update_layout(height=300)
+            st.plotly_chart(fig_rd, use_container_width=True)
+        else:
+            st.info("No reviews yet.")
+
+    st.stop()
+
+record_visit(st.session_state.session_id, f"Dashboard - {selected_league}")
+
 st.title("Football Econometrics Dashboard")
 st.caption(f"A reproducible econometrics study of what statistically matters for success in the {selected_league} ({caption_range})")
+
+good_reviews = get_good_reviews()
+if good_reviews:
+    st.markdown("---")
+    st.subheader("What Our Users Say")
+    review_cols = st.columns(min(len(good_reviews), 4))
+    for i, (username, rating, comment, created_at) in enumerate(good_reviews[:4]):
+        with review_cols[i % len(review_cols)]:
+            st.markdown(
+                f'<div style="background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); '
+                f'border-radius: 12px; padding: 18px; margin-bottom: 10px; '
+                f'border-left: 4px solid #FFD700;">'
+                f'{render_star_display(rating)}<br>'
+                f'<span style="color: #ddd; font-style: italic;">'
+                f'{"&ldquo;" + comment + "&rdquo;" if comment else "<em>No comment</em>"}</span><br>'
+                f'<span style="color: #888; font-size: 0.85em;">— <strong>{username}</strong> '
+                f'&middot; {created_at.strftime("%b %d, %Y") if created_at else ""}</span>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+    if len(good_reviews) > 4:
+        with st.expander(f"View all {len(good_reviews)} reviews"):
+            for username, rating, comment, created_at in good_reviews[4:]:
+                st.markdown(
+                    f'{render_star_display(rating)} **{username}** — '
+                    f'{"_" + comment + "_" if comment else "No comment"} '
+                    f'({created_at.strftime("%b %d, %Y") if created_at else ""})',
+                    unsafe_allow_html=True,
+                )
+    st.markdown("---")
 
 
 def format_season_label(yr, season_type):
@@ -2915,3 +3186,33 @@ except requests.exceptions.HTTPError:
         st.error(f"Could not fetch data for the {selected_league}.")
 except Exception as e:
     st.error(f"An error occurred: {e}")
+
+st.divider()
+st.subheader("Rate This Dashboard")
+st.caption("Your feedback helps us improve. Leave a rating and an optional comment.")
+
+with st.form("feedback_form", clear_on_submit=True):
+    feedback_cols = st.columns([1, 1, 2])
+    with feedback_cols[0]:
+        fb_username = st.text_input("Your name", max_chars=100, placeholder="e.g. FootballFan99")
+    with feedback_cols[1]:
+        fb_rating = st.select_slider(
+            "Rating",
+            options=[1, 2, 3, 4, 5],
+            value=5,
+            format_func=lambda x: "\u2605" * x + "\u2606" * (5 - x),
+        )
+    with feedback_cols[2]:
+        fb_comment = st.text_area("Comment (optional)", max_chars=500, placeholder="What did you like? Any suggestions?", height=80)
+
+    submitted = st.form_submit_button("Submit Review", type="primary", use_container_width=True)
+    if submitted:
+        if not fb_username or not fb_username.strip():
+            st.error("Please enter your name.")
+        else:
+            try:
+                submit_review(fb_username.strip(), fb_rating, fb_comment.strip() if fb_comment else None)
+                st.success("Thank you for your feedback!")
+                st.balloons()
+            except Exception as ex:
+                st.error(f"Could not save your review. Please try again.")
