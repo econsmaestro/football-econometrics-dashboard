@@ -10,6 +10,7 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
+- **2026-02-13**: Added user feedback system with 1-5 star ratings, optional text comments, and username. Good reviews (4-5 stars) are displayed on the Dashboard homepage in styled cards; bad reviews (1-3 stars) are hidden from public view. Added web analytics page showing total unique visitors, total page views, daily traffic chart (30 days), most visited pages, review statistics, and rating distribution. Uses PostgreSQL database for persistent storage.
 - **2026-02-12**: Updated league configs with researched accurate values: J1 League (20 teams, 38 games from 2025 expansion), K League 1 (12 teams, 38 games incl. split round), ISL (13 teams, 24 games), MLS (30 teams, 34 games), Argentine (30 teams). Rebasing auto-normalizes historical seasons with different formats.
 - **2026-02-12**: Added season rebasing — seasons with different numbers of games (e.g. PL's 42-game era before 1995-96, Serie A's 34-game era before 2004-05, Ligue 1's 38-game era before 2023-24) are automatically scaled to the league's current standard for fair cross-season comparison. Only complete seasons are rebased; in-progress seasons keep actual values. Visual indicators show when rebasing has been applied in League Table, Statistical Analysis, and Team Insights tabs.
 - **2026-02-12**: Added incomplete season detection — benchmarking, strengths/weaknesses, and recommendations use only completed seasons (Pld >= games_per_season) to avoid misleading comparisons with in-progress seasons.
