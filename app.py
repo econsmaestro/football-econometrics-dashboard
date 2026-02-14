@@ -2205,6 +2205,11 @@ try:
 
                 st.divider()
                 st.markdown("#### Game-Theory Adjusted Analysis")
+                st.caption(
+                    "_Adjustment model: heuristic shift toward preferred zones proportional to GK underperformance. "
+                    "Adjusted taker probabilities assume reduced strategic diversification due to below-average GK performance, "
+                    "or increased diversification against high-reputation goalkeepers._"
+                )
                 st.markdown(
                     f"Smart penalty takers do their homework. **{selected_gk}** has a "
                     f"{'high' if gk_reputation > 1.1 else 'average' if gk_reputation > 0.9 else 'below-average'} "
@@ -2266,6 +2271,12 @@ try:
                 adj_df.index = range(1, len(adj_df) + 1)
                 st.dataframe(adj_df, use_container_width=True)
 
+                st.caption(
+                    "_Note: estimates are subject to sampling variability. "
+                    "Confidence decreases for small sample sizes. "
+                    "These probabilities are modelled approximations, not certainties._"
+                )
+
                 adj_best = adj_df.iloc[0]["Zone"]
                 adj_best_value = adj_df.iloc[0]["Adj. Expected Save"]
 
@@ -2290,6 +2301,89 @@ try:
                         f"this remains the best zone to cover. "
                         f"Remember: this is YOUR left/right as the goalkeeper facing the striker."
                     )
+
+                st.divider()
+                st.markdown("#### Expected Save Probability — Pitch Heatmap")
+                st.caption("_Because penalties = spatial decision problem. Colour intensity shows where the goalkeeper is most likely to make a save._")
+
+                zone_positions = {
+                    "Top-Left":      (0.15, 0.85),
+                    "Top-Centre":    (0.50, 0.85),
+                    "Top-Right":     (0.85, 0.85),
+                    "Mid-Left":      (0.15, 0.50),
+                    "Mid-Right":     (0.85, 0.50),
+                    "Bottom-Left":   (0.15, 0.15),
+                    "Bottom-Centre": (0.50, 0.15),
+                    "Bottom-Right":  (0.85, 0.15),
+                }
+                heatmap_zones = []
+                for _, row in adj_df.iterrows():
+                    z = row["Zone"]
+                    if z in zone_positions:
+                        x, y = zone_positions[z]
+                        heatmap_zones.append({
+                            "Zone": z, "x": x, "y": y,
+                            "Save Prob": row["Adj. Expected Save"],
+                            "GK Save %": row["GK Save Rate %"],
+                            "Taker %": row["Adjusted Taker %"],
+                        })
+
+                fig_pitch = go.Figure()
+
+                fig_pitch.add_shape(type="rect", x0=0, y0=0, x1=1, y1=1,
+                    line=dict(color="white", width=3), fillcolor="#2d6a2d", opacity=0.8)
+                fig_pitch.add_shape(type="rect", x0=0.3, y0=-0.15, x1=0.7, y1=0,
+                    line=dict(color="white", width=2))
+                fig_pitch.add_shape(type="line", x0=0, y0=0, x1=1, y1=0,
+                    line=dict(color="white", width=3))
+
+                max_save = max(h["Save Prob"] for h in heatmap_zones) if heatmap_zones else 1
+                for h in heatmap_zones:
+                    intensity = h["Save Prob"] / max_save if max_save > 0 else 0
+                    r = int(255 * intensity)
+                    g = int(80 * (1 - intensity))
+                    b = int(40 * (1 - intensity))
+                    color = f"rgba({r},{g},{b},0.85)"
+
+                    fig_pitch.add_trace(go.Scatter(
+                        x=[h["x"]], y=[h["y"]],
+                        mode="markers+text",
+                        marker=dict(size=55, color=color, line=dict(color="white", width=2)),
+                        text=f"{h['Save Prob']:.1f}%",
+                        textposition="middle center",
+                        textfont=dict(color="white", size=12, family="Arial Black"),
+                        hovertemplate=(
+                            f"<b>{h['Zone']}</b><br>"
+                            f"Expected Save: {h['Save Prob']:.2f}%<br>"
+                            f"GK Save Rate: {h['GK Save %']:.1f}%<br>"
+                            f"Taker Aims Here: {h['Taker %']:.1f}%<extra></extra>"
+                        ),
+                        showlegend=False,
+                    ))
+
+                fig_pitch.update_layout(
+                    template="plotly_dark",
+                    height=350, width=500,
+                    xaxis=dict(range=[-0.1, 1.1], showgrid=False, zeroline=False, showticklabels=False, title=""),
+                    yaxis=dict(range=[-0.25, 1.15], showgrid=False, zeroline=False, showticklabels=False, title="", scaleanchor="x"),
+                    plot_bgcolor="rgba(0,0,0,0)",
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    margin=dict(l=20, r=20, t=30, b=20),
+                    annotations=[
+                        dict(x=0.5, y=1.1, text="Goal (from GK's perspective)", showarrow=False,
+                             font=dict(size=13, color="white")),
+                        dict(x=0.5, y=-0.2, text="Penalty Spot", showarrow=False,
+                             font=dict(size=11, color="#aaa")),
+                    ],
+                )
+                st.plotly_chart(fig_pitch, use_container_width=True)
+
+                st.info(
+                    "**Equilibrium insight:** In theory, optimal play converges toward mixed strategies. "
+                    "Deviations arise when one player is perceived as weak — a strong GK forces takers to diversify, "
+                    "while a weak GK allows takers to exploit their favourite zones. "
+                    "The heatmap above visualises this spatial decision problem."
+                )
 
                 with st.expander("How the game-theory adjustment works", expanded=False):
                     st.markdown(
