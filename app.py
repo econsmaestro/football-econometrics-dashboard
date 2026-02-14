@@ -1793,6 +1793,24 @@ try:
             f"to have taken or faced a penalty in the {selected_league}. "
             "Use the predictor below to estimate the probability of a goalkeeper saving a penalty from a specific taker."
         )
+        with st.expander("The goalkeeper movement rule — and why it matters", expanded=False):
+            st.markdown(
+                "**IFAB Law 14 (updated 2019/20):** At the moment of the kick, the goalkeeper must have "
+                "**at least one foot on or in line with the goal line**. Previously, goalkeepers could stand "
+                "anywhere on the line — or even step forward — before diving. The new rule (enforced via VAR) "
+                "means penalties are retaken if the goalkeeper moves both feet off the line before contact.\n\n"
+                "**Why this matters for analysis:**\n"
+                "- **Save rates have dropped** since 2019/20 because goalkeepers can no longer gain an advantage "
+                "by stepping forward (which cut down the angle and reaction time for the taker).\n"
+                "- **Historical all-time save rates** (which include the pre-rule era) may overestimate "
+                "a modern goalkeeper's ability to save penalties, since part of that record was accumulated "
+                "under more lenient movement rules.\n"
+                "- **Takers have become bolder** — knowing the goalkeeper is more constrained, some takers "
+                "now favour power over placement, and down-the-middle penalties have increased.\n\n"
+                "_This dashboard uses all-time records. When interpreting save rates for active goalkeepers, "
+                "keep in mind that their recent record (post-2019) is a better indicator of current ability "
+                "than their career-long average._"
+            )
 
         SAVED_SHARE_OF_MISSES = 0.57
         OFF_TARGET_SHARE_OF_MISSES = 0.43
@@ -2401,7 +2419,11 @@ try:
                         "and sometimes down the centre (exploiting the keeper's tendency to dive). "
                         "The shift magnitude depends on both the GK's reputation and the taker's skill level.\n\n"
                         "4. **Result**: The adjusted zone probabilities show where a strategic taker is "
-                        "actually likely to aim, which may differ significantly from league averages."
+                        "actually likely to aim, which may differ significantly from league averages.\n\n"
+                        "5. **Modern rule constraint (IFAB 2019/20)**: Goalkeepers must keep at least one foot "
+                        "on the goal line at the moment of the kick. This limits the GK's ability to close down "
+                        "the angle by stepping forward, making saves harder than in the pre-rule era. "
+                        "All-time save rates may therefore slightly overestimate a goalkeeper's current saving ability."
                     )
 
             predictor_fragment()
