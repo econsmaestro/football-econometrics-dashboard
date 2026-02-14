@@ -257,7 +257,9 @@ with st.sidebar:
         icon = _LEAGUE_ICONS.get(name, "\u26bd")
         return f"{icon} {name}"
 
-    selected_league = st.selectbox("Competition", LEAGUE_OPTIONS, index=0, format_func=_format_league)
+    _is_loading = st.session_state.get("_data_loading", False)
+
+    selected_league = st.selectbox("Competition", LEAGUE_OPTIONS, index=0, format_func=_format_league, disabled=_is_loading)
     league_cfg = LEAGUE_CONFIG[selected_league]
 
     _logo_code = league_cfg["tm_code"].lower()
@@ -281,6 +283,7 @@ with st.sidebar:
                 options=all_seasons,
                 index=len(all_seasons) - 1,
                 format_func=lambda y: f"{y - 1}-{str(y)[2:]}",
+                disabled=_is_loading,
             )
         else:
             first_season_val = league_cfg["start_year"]
@@ -290,6 +293,7 @@ with st.sidebar:
                 "Season",
                 options=all_seasons,
                 index=len(all_seasons) - 1,
+                disabled=_is_loading,
             )
 
         st.divider()
@@ -301,6 +305,7 @@ with st.sidebar:
             min_value=range_min,
             max_value=range_max,
             value=(range_min, range_max),
+            disabled=_is_loading,
         )
     else:
         if league_cfg["season_type"] == "split":
@@ -1232,12 +1237,15 @@ has_league_tables = league_cfg["wiki_pattern"] is not None
 
 try:
     if has_league_tables:
+        st.session_state["_data_loading"] = True
         with st.spinner("Fetching league data..."):
             single_season_raw = fetch_season_data(int(season), league_cfg["wiki_pattern"], league_cfg["wiki_name"], league_cfg["season_type"])
             multi_season_raw = load_multi_season(season_range[0], season_range[1], league_cfg["wiki_pattern"], league_cfg["wiki_name"], league_cfg["season_type"])
             gps = league_cfg["games_per_season"]
             single_season = rebase_to_standard_season(single_season_raw, gps)
             multi_season = rebase_to_standard_season(multi_season_raw, gps)
+        st.session_state["_data_loading"] = False
+        st.caption(f"**Last Updated:** {datetime.now().strftime('%d %b %Y, %H:%M:%S')}")
     else:
         single_season = pd.DataFrame()
         multi_season = pd.DataFrame()
@@ -3186,6 +3194,16 @@ except requests.exceptions.HTTPError:
         st.error(f"Could not fetch data for the {selected_league}.")
 except Exception as e:
     st.error(f"An error occurred: {e}")
+
+st.divider()
+st.markdown(
+    '<div style="text-align:center;padding:8px 0;color:#888;font-size:0.85em;">'
+    'Data Source: <a href="https://fbref.com" target="_blank" style="color:#888;">FBref</a> '
+    '| <a href="https://en.wikipedia.org" target="_blank" style="color:#888;">Wikipedia</a> '
+    '| <a href="https://www.transfermarkt.com" target="_blank" style="color:#888;">Transfermarkt</a>'
+    '</div>',
+    unsafe_allow_html=True,
+)
 
 st.divider()
 st.subheader("Rate This Dashboard")
