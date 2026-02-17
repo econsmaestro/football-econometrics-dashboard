@@ -590,6 +590,90 @@ def load_multi_season(start_year, end_year, wiki_pattern, wiki_name, season_type
     return pd.DataFrame()
 
 
+@st.cache_data(ttl=3600, show_spinner=False)
+def load_cross_league_comparison():
+    leagues_with_wiki = {
+        name: cfg for name, cfg in LEAGUE_CONFIG.items()
+        if cfg.get("wiki_pattern") is not None and cfg.get("wiki_name") is not None and not cfg.get("is_cup", False)
+    }
+
+    rows = []
+    failed_leagues = []
+    for league_name, cfg in leagues_with_wiki.items():
+        try:
+            if cfg["season_type"] == "split":
+                season_val = CURRENT_SEASON_END
+            else:
+                season_val = CURRENT_SEASON_END - 1
+
+            df = fetch_season_data(season_val, cfg["wiki_pattern"], cfg["wiki_name"], cfg["season_type"])
+            if df.empty or "GF" not in df.columns or "GA" not in df.columns:
+                continue
+
+            gps = cfg["games_per_season"]
+            total_teams = len(df)
+            total_goals_for = df["GF"].sum()
+            total_goals_against = df["GA"].sum()
+            total_matches = df["Pld"].sum() / 2 if "Pld" in df.columns else (total_teams * gps) / 2
+            total_goals = total_goals_for
+            goals_per_match = total_goals / total_matches if total_matches > 0 else 0
+
+            avg_ga = df["GA"].mean()
+            best_defence_ga = df["GA"].min()
+            best_defence_team = df.loc[df["GA"].idxmin(), "Squad"] if "Squad" in df.columns else ""
+            worst_defence_ga = df["GA"].max()
+            worst_defence_team = df.loc[df["GA"].idxmax(), "Squad"] if "Squad" in df.columns else ""
+
+            pts_col = df["Pts"] if "Pts" in df.columns else None
+            if pts_col is not None:
+                pts_std = pts_col.std()
+                pts_range = pts_col.max() - pts_col.min()
+                leader_pts = pts_col.max()
+                bottom_pts = pts_col.min()
+            else:
+                pts_std = 0
+                pts_range = 0
+                leader_pts = 0
+                bottom_pts = 0
+
+            wins = df["W"].sum() if "W" in df.columns else 0
+            draws = df["D"].sum() if "D" in df.columns else 0
+            losses = df["L"].sum() if "L" in df.columns else 0
+            total_results = wins + draws + losses
+            draw_pct = (draws / total_results * 100) if total_results > 0 else 0
+
+            gd_values = df["GD"] if "GD" in df.columns else (df["GF"] - df["GA"])
+            avg_gd_spread = gd_values.std() if len(gd_values) > 1 else 0
+
+            games_played = df["Pld"].max() if "Pld" in df.columns else gps
+            season_progress = (games_played / gps * 100) if gps > 0 else 100
+
+            rows.append({
+                "League": league_name,
+                "Teams": total_teams,
+                "Goals/Match": round(goals_per_match, 2),
+                "Avg GA": round(avg_ga, 1),
+                "Best Defence": f"{best_defence_team} ({best_defence_ga:.0f})",
+                "Best Defence GA": best_defence_ga,
+                "Worst Defence": f"{worst_defence_team} ({worst_defence_ga:.0f})",
+                "Draw %": round(draw_pct, 1),
+                "Pts Spread": round(pts_range, 0),
+                "Competitiveness": round(pts_std, 1),
+                "Leader Pts": leader_pts,
+                "Bottom Pts": bottom_pts,
+                "Season Progress %": round(season_progress, 0),
+                "Category": cfg.get("category", "Other"),
+            })
+        except Exception:
+            failed_leagues.append(league_name)
+            continue
+
+    result = pd.DataFrame(rows) if rows else pd.DataFrame()
+    result.attrs["failed_leagues"] = failed_leagues
+    result.attrs["total_leagues"] = len(leagues_with_wiki)
+    return result
+
+
 def rebase_to_standard_season(df, games_per_season):
     if df.empty or games_per_season <= 0 or "Pld" not in df.columns:
         return df
@@ -1443,13 +1527,14 @@ try:
             st.markdown("")
 
     if has_league_tables:
-        tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+        tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
             "League Table",
             "Statistical Analysis",
             "Visualizations",
             "Predictions & Insights",
             "Penalty Analysis",
             "Team Insights",
+            "League Comparisons",
         ])
         if not multi_season.empty and "Squad" in multi_season.columns:
             _all_teams_sidebar = sorted(multi_season["Squad"].unique().tolist())
@@ -3497,6 +3582,145 @@ try:
                     st.caption(f"Data source: Wikipedia {selected_league} season articles. Points standardised to 3-for-a-win system.")
             else:
                 st.warning("Multi-season data is not available. Adjust the season range in the sidebar.")
+
+        with tab7:
+            st.header("Cross-League Comparison")
+            st.markdown(
+                "How does each league compare? This section fetches the current season standings for all "
+                "available leagues and compares them on key metrics like scoring rate, defensive strength, "
+                "competitiveness, and playing style."
+            )
+
+            with st.spinner("Loading cross-league data (this may take a moment on first load)..."):
+                cross_df = load_cross_league_comparison()
+
+            if not cross_df.empty:
+                failed = cross_df.attrs.get("failed_leagues", [])
+                total = cross_df.attrs.get("total_leagues", 0)
+                loaded = len(cross_df)
+                if failed:
+                    st.info(f"Loaded {loaded} of {total} leagues. Could not fetch data for: {', '.join(failed)}.")
+
+                st.subheader("League Overview")
+                display_cols = ["League", "Teams", "Goals/Match", "Avg GA", "Best Defence",
+                                "Worst Defence", "Draw %", "Pts Spread", "Competitiveness", "Season Progress %"]
+                display_cross = cross_df[[c for c in display_cols if c in cross_df.columns]].copy()
+                display_cross.index = range(1, len(display_cross) + 1)
+                st.dataframe(display_cross, use_container_width=True)
+                share_table_buttons(display_cross, "Cross-League Comparison", "cross_league")
+
+                st.markdown("""
+**How to read this table:**
+- **Goals/Match** — Average goals scored per match. Higher = more attacking league.
+- **Avg GA** — Average goals conceded per team. Lower = better overall defending.
+- **Best/Worst Defence** — The tightest and leakiest defence in each league (goals conceded).
+- **Draw %** — Percentage of matches ending in draws. Higher = more cautious play.
+- **Pts Spread** — Gap between 1st and last place. Larger = more dominant top teams.
+- **Competitiveness** — Standard deviation of points. Lower = more evenly matched league.
+""")
+
+                col_c1, col_c2 = st.columns(2)
+
+                with col_c1:
+                    st.subheader("Highest Scoring Leagues")
+                    sorted_goals = cross_df.sort_values("Goals/Match", ascending=False)
+                    fig_goals = px.bar(
+                        sorted_goals, x="League", y="Goals/Match",
+                        template="plotly_dark",
+                        color="Goals/Match",
+                        color_continuous_scale="YlOrRd",
+                    )
+                    fig_goals.update_layout(height=400, xaxis_tickangle=-45, showlegend=False)
+                    st.plotly_chart(fig_goals, use_container_width=True)
+
+                with col_c2:
+                    st.subheader("Most Competitive Leagues")
+                    sorted_comp = cross_df.sort_values("Competitiveness", ascending=True)
+                    fig_comp = px.bar(
+                        sorted_comp, x="League", y="Competitiveness",
+                        template="plotly_dark",
+                        color="Competitiveness",
+                        color_continuous_scale="Blues_r",
+                    )
+                    fig_comp.update_layout(height=400, xaxis_tickangle=-45, showlegend=False)
+                    st.plotly_chart(fig_comp, use_container_width=True)
+
+                col_c3, col_c4 = st.columns(2)
+
+                with col_c3:
+                    st.subheader("Defensive Strength (Avg Goals Conceded)")
+                    sorted_def = cross_df.sort_values("Avg GA", ascending=True)
+                    fig_def = px.bar(
+                        sorted_def, x="League", y="Avg GA",
+                        template="plotly_dark",
+                        color="Avg GA",
+                        color_continuous_scale="Greens_r",
+                    )
+                    fig_def.update_layout(height=400, xaxis_tickangle=-45, showlegend=False)
+                    st.plotly_chart(fig_def, use_container_width=True)
+
+                with col_c4:
+                    st.subheader("Draw Percentage by League")
+                    sorted_draw = cross_df.sort_values("Draw %", ascending=False)
+                    fig_draw = px.bar(
+                        sorted_draw, x="League", y="Draw %",
+                        template="plotly_dark",
+                        color="Draw %",
+                        color_continuous_scale="Purples",
+                    )
+                    fig_draw.update_layout(height=400, xaxis_tickangle=-45, showlegend=False)
+                    st.plotly_chart(fig_draw, use_container_width=True)
+
+                st.subheader("League Comparison Scatter")
+                st.markdown("Explore how leagues differ on two dimensions at once.")
+                scatter_metrics = ["Goals/Match", "Avg GA", "Draw %", "Pts Spread", "Competitiveness", "Teams"]
+                avail_metrics = [m for m in scatter_metrics if m in cross_df.columns]
+                if len(avail_metrics) >= 2:
+                    sc_col1, sc_col2 = st.columns(2)
+                    with sc_col1:
+                        x_metric = st.selectbox("X-axis", avail_metrics, index=0, key="cross_scatter_x")
+                    with sc_col2:
+                        y_default = min(1, len(avail_metrics) - 1)
+                        y_metric = st.selectbox("Y-axis", avail_metrics, index=y_default, key="cross_scatter_y")
+
+                    fig_scatter = px.scatter(
+                        cross_df, x=x_metric, y=y_metric, text="League",
+                        template="plotly_dark", size_max=15,
+                        color="Category",
+                    )
+                    fig_scatter.update_traces(textposition="top center", marker=dict(size=12))
+                    fig_scatter.update_layout(height=500)
+                    st.plotly_chart(fig_scatter, use_container_width=True)
+
+                st.subheader("Key Takeaways")
+                if len(cross_df) >= 2:
+                    highest_scoring = cross_df.loc[cross_df["Goals/Match"].idxmax()]
+                    lowest_scoring = cross_df.loc[cross_df["Goals/Match"].idxmin()]
+                    most_competitive = cross_df.loc[cross_df["Competitiveness"].idxmin()]
+                    least_competitive = cross_df.loc[cross_df["Competitiveness"].idxmax()]
+                    most_draws = cross_df.loc[cross_df["Draw %"].idxmax()]
+                    best_def_league = cross_df.loc[cross_df["Best Defence GA"].idxmin()]
+
+                    takeaways = [
+                        f"**Most entertaining league:** {highest_scoring['League']} with **{highest_scoring['Goals/Match']} goals per match** — "
+                        f"expect end-to-end action.",
+                        f"**Most defensive league:** {lowest_scoring['League']} averaging **{lowest_scoring['Goals/Match']} goals per match** — "
+                        f"tight, tactical affairs.",
+                        f"**Most competitive league:** {most_competitive['League']} (pts std dev: {most_competitive['Competitiveness']}) — "
+                        f"any team can beat any team on their day.",
+                        f"**Most one-sided league:** {least_competitive['League']} (pts std dev: {least_competitive['Competitiveness']}) — "
+                        f"a bigger gap between top and bottom.",
+                        f"**Most cautious league:** {most_draws['League']} with **{most_draws['Draw %']}% draws** — "
+                        f"teams prefer not to lose over trying to win.",
+                        f"**Best single defence across all leagues:** {best_def_league['Best Defence']} "
+                        f"in the {best_def_league['League']}.",
+                    ]
+                    for t in takeaways:
+                        st.markdown(f"- {t}")
+
+                st.caption("Data source: Wikipedia current-season league articles. Metrics are based on the season in progress and will update as more matches are played.")
+            else:
+                st.warning("Could not load cross-league comparison data. Please try again later.")
 
 except requests.exceptions.HTTPError:
     if season is not None:
