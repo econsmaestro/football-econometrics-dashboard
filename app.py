@@ -483,7 +483,7 @@ def format_season_label(yr, season_type):
 
 @st.cache_data(ttl=604800, show_spinner=False)
 def fetch_season_data(season_val, wiki_pattern, wiki_name, season_type):
-    if wiki_pattern is None:
+    if wiki_pattern is None or wiki_name is None:
         raise ValueError("League tables are not available for this competition.")
 
     encoded_name = quote(wiki_name, safe="_")
@@ -1256,7 +1256,7 @@ ZONE_PROBS = {
     "Mid-Right":    {"Taker %": 3.7, "GK Save %": 28.0},
 }
 
-has_league_tables = league_cfg["wiki_pattern"] is not None
+has_league_tables = league_cfg["wiki_pattern"] is not None and league_cfg.get("wiki_name") is not None
 
 try:
     if has_league_tables:
