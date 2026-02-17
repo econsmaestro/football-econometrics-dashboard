@@ -262,13 +262,26 @@ with st.sidebar:
     selected_league = st.selectbox("Competition", LEAGUE_OPTIONS, index=0, format_func=_format_league, disabled=_is_loading)
     league_cfg = LEAGUE_CONFIG[selected_league]
 
-    _logo_code = league_cfg["tm_code"].lower()
-    _logo_url = f"https://tmssl.akamaized.net/images/logo/header/{_logo_code}.png?lm=1"
+    _LOGO_OVERRIDES = {
+        "PE1N": "pe1n",
+        "COL1": "col1",
+        "CLPD": "clpd",
+        "URU1": "uru1",
+        "PAR1": "par1",
+        "BOL1": "bol1",
+        "VEN1": "ven1",
+    }
+    _logo_code = league_cfg["tm_code"]
+    _logo_slug = _LOGO_OVERRIDES.get(_logo_code, _logo_code.lower())
+    _logo_url = f"https://tmssl.akamaized.net/images/logo/header/{_logo_slug}.png?lm=1"
     st.markdown(
         f'<div style="text-align:center;padding:8px 0;">'
         f'<div style="display:inline-block;background:rgba(255,255,255,0.92);border-radius:50%;padding:14px;'
         f'box-shadow:0 2px 8px rgba(0,0,0,0.15);">'
-        f'<img src="{_logo_url}" alt="{selected_league}" style="max-height:70px;max-width:70px;display:block;">'
+        f'<img src="{_logo_url}" alt="{selected_league}" '
+        f'style="max-height:70px;max-width:70px;display:block;" '
+        f'onerror="this.onerror=null;this.style.display=\'none\';this.parentElement.innerHTML='
+        f'\'<span style=&quot;font-size:40px;&quot;>&#9917;</span>\';">'
         f'</div>'
         f'<div style="font-size:0.85em;color:#888;margin-top:6px;">{selected_league}</div>'
         f'</div>',
