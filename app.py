@@ -407,9 +407,18 @@ if nav_page == "Analytics":
         if analytics["rating_dist"]:
             rd_df = pd.DataFrame(analytics["rating_dist"], columns=["Rating", "Count"])
             rd_df["Rating"] = rd_df["Rating"].apply(lambda r: f"{r} Star{'s' if r > 1 else ''}")
+            rating_color_map = {
+                "5 Stars": "#2ecc71",
+                "4 Stars": "#3498db",
+                "3 Stars": "#f1c40f",
+                "2 Stars": "#e74c3c",
+                "1 Star": "#c0392b",
+            }
             fig_rd = px.pie(rd_df, values="Count", names="Rating", template="plotly_dark",
-                           color_discrete_sequence=px.colors.sequential.YlOrRd_r)
-            fig_rd.update_layout(height=300)
+                           color_discrete_map=rating_color_map)
+            fig_rd.update_layout(height=300, showlegend=True,
+                                legend=dict(orientation="v", yanchor="middle", y=0.5, xanchor="left", x=1.02))
+            fig_rd.update_traces(textposition="inside", textinfo="percent+label")
             st.plotly_chart(fig_rd, use_container_width=True)
         else:
             st.info("No reviews yet.")
@@ -1266,7 +1275,6 @@ try:
         has_pts = "Pts" in single_season.columns
         has_gf_ga = "GF" in single_season.columns and "GA" in single_season.columns
         has_gd = "GD" in single_season.columns
-        has_ppg = "PPG" in single_season.columns
 
         hook_insights = []
 
@@ -1277,11 +1285,6 @@ try:
                 current_df["_games_played"] > 0,
                 (current_df["Pts"] / current_df["_games_played"]) * gps,
                 current_df["Pts"],
-            )
-            current_df["_gd_pace"] = np.where(
-                current_df["_games_played"] > 0,
-                (current_df["GD"] / current_df["_games_played"]) * gps if has_gd else 0,
-                0,
             )
 
             completed = multi_season[multi_season.get("Pld", 0) >= gps * 0.9] if "Pld" in multi_season.columns else multi_season
@@ -1343,6 +1346,72 @@ try:
                             f"**Title race:** {leader_name} tracks the historical title pace "
                             f"({leader_pace:.0f} pts projected vs {avg_title:.0f} avg). Tight at the top."
                         )
+
+            if len(current_df) >= 2 and has_pts:
+                pts_1st = current_df.iloc[0].get("Pts", 0)
+                pts_2nd = current_df.iloc[1].get("Pts", 0)
+                gap = pts_1st - pts_2nd
+                squad_1 = current_df.iloc[0].get("Squad", "Leader")
+                squad_2 = current_df.iloc[1].get("Squad", "2nd")
+                games_played = current_df.iloc[0].get("_games_played", gps)
+                if games_played > 0 and games_played < gps:
+                    remaining = gps - games_played
+                    if gap == 0:
+                        hook_insights.append(
+                            f"**Neck and neck:** {squad_1} and {squad_2} are level on **{pts_1st:.0f} pts** "
+                            f"with {remaining:.0f} games remaining. Every match is a final."
+                        )
+                    elif gap <= 3:
+                        hook_insights.append(
+                            f"**Tight at the top:** Only **{gap:.0f} pts** separate {squad_1} ({pts_1st:.0f}) "
+                            f"from {squad_2} ({pts_2nd:.0f}) with {remaining:.0f} games to go."
+                        )
+
+            if has_gf_ga:
+                best_attack = current_df.loc[current_df["GF"].idxmax()]
+                best_defence = current_df.loc[current_df["GA"].idxmin()]
+                worst_defence = current_df.loc[current_df["GA"].idxmax()]
+                best_att_name = best_attack.get("Squad", "")
+                best_def_name = best_defence.get("Squad", "")
+                worst_def_name = worst_defence.get("Squad", "")
+                best_att_gf = best_attack["GF"]
+                best_att_pld = best_attack.get("_games_played", gps)
+                best_def_ga = best_defence["GA"]
+                best_def_pld = best_defence.get("_games_played", gps)
+                worst_def_ga = worst_defence["GA"]
+                worst_def_pld = worst_defence.get("_games_played", gps)
+
+                if best_att_pld > 0:
+                    att_rate = best_att_gf / best_att_pld
+                    hook_insights.append(
+                        f"**Best attack:** {best_att_name} leads the scoring charts with **{best_att_gf:.0f} goals** "
+                        f"({att_rate:.2f} per game)."
+                    )
+                if best_def_pld > 0:
+                    def_rate = best_def_ga / best_def_pld
+                    hook_insights.append(
+                        f"**Tightest defence:** {best_def_name} — just **{best_def_ga:.0f} goals conceded** "
+                        f"({def_rate:.2f} per game)."
+                    )
+                if worst_def_name != best_def_name and worst_def_pld > 0:
+                    leak_rate = worst_def_ga / worst_def_pld
+                    if leak_rate > 2.0:
+                        hook_insights.append(
+                            f"**Leakiest defence:** {worst_def_name} have conceded **{worst_def_ga:.0f} goals** "
+                            f"({leak_rate:.2f} per game) — a defensive rebuild is needed."
+                        )
+
+            if has_gd and len(current_df) >= 5:
+                bottom_5 = current_df.tail(5)
+                relegation_battle = bottom_5[bottom_5["GD"] < 0]
+                if len(relegation_battle) >= 3:
+                    worst = relegation_battle.iloc[-1]
+                    worst_name = worst.get("Squad", "")
+                    worst_gd = worst["GD"]
+                    hook_insights.append(
+                        f"**Relegation watch:** {worst_name} sit bottom with a goal difference of "
+                        f"**{worst_gd:+.0f}** — time is running out."
+                    )
 
         if hook_insights:
             st.markdown(
