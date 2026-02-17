@@ -452,6 +452,17 @@ if good_reviews:
     st.markdown("---")
 
 
+def share_table_buttons(df, label, key_prefix):
+    csv_data = df.to_csv(index=False)
+    st.download_button(
+        label=f"Download {label} as CSV",
+        data=csv_data,
+        file_name=f"{label.lower().replace(' ', '_')}.csv",
+        mime="text/csv",
+        key=f"dl_{key_prefix}",
+    )
+
+
 def format_season_label(yr, season_type):
     if season_type == "split":
         return f"{yr - 1}-{str(yr)[2:]}"
@@ -1250,6 +1261,102 @@ try:
         single_season = pd.DataFrame()
         multi_season = pd.DataFrame()
 
+    if has_league_tables and not single_season.empty and not multi_season.empty:
+        gps = league_cfg["games_per_season"]
+        has_pts = "Pts" in single_season.columns
+        has_gf_ga = "GF" in single_season.columns and "GA" in single_season.columns
+        has_gd = "GD" in single_season.columns
+        has_ppg = "PPG" in single_season.columns
+
+        hook_insights = []
+
+        if has_pts and has_gf_ga and gps > 0:
+            current_df = single_season.copy()
+            current_df["_games_played"] = current_df.get("Pld", gps)
+            current_df["_pts_pace"] = np.where(
+                current_df["_games_played"] > 0,
+                (current_df["Pts"] / current_df["_games_played"]) * gps,
+                current_df["Pts"],
+            )
+            current_df["_gd_pace"] = np.where(
+                current_df["_games_played"] > 0,
+                (current_df["GD"] / current_df["_games_played"]) * gps if has_gd else 0,
+                0,
+            )
+
+            completed = multi_season[multi_season.get("Pld", 0) >= gps * 0.9] if "Pld" in multi_season.columns else multi_season
+            if not completed.empty and "Pts" in completed.columns and "Squad" in completed.columns:
+                hist_avg = completed.groupby("Squad")["Pts"].mean()
+
+                overperformers = []
+                underperformers = []
+                for _, row in current_df.iterrows():
+                    team = row.get("Squad", "")
+                    if team in hist_avg.index:
+                        hist = hist_avg[team]
+                        projected = row["_pts_pace"]
+                        diff = projected - hist
+                        if diff > 5:
+                            overperformers.append((team, projected, hist, diff))
+                        elif diff < -5:
+                            underperformers.append((team, projected, hist, diff))
+
+                if overperformers:
+                    overperformers.sort(key=lambda x: -x[3])
+                    top = overperformers[0]
+                    hook_insights.append(
+                        f"**Biggest overperformer this season:** {top[0]} — on pace for **{top[1]:.0f} pts** "
+                        f"vs their historical average of {top[2]:.0f} pts (+{top[3]:.0f}). "
+                        f"{'Can they sustain it?' if top[3] > 10 else 'A solid step up.'}"
+                    )
+
+                if underperformers:
+                    underperformers.sort(key=lambda x: x[3])
+                    bot = underperformers[0]
+                    hook_insights.append(
+                        f"**Biggest underperformer:** {bot[0]} — projected for **{bot[1]:.0f} pts** "
+                        f"vs historical average {bot[2]:.0f} ({bot[3]:.0f}). "
+                        f"{'Crisis mode.' if bot[3] < -15 else 'A season to forget.'}"
+                    )
+
+                champ_pts = completed.groupby("Season").apply(lambda g: g["Pts"].max())
+                if len(champ_pts) >= 3:
+                    avg_title = champ_pts.mean()
+                    leader = current_df.iloc[0]
+                    leader_pace = leader["_pts_pace"]
+                    title_gap = leader_pace - avg_title
+                    leader_name = leader.get("Squad", "Leader")
+                    if title_gap > 5:
+                        hook_insights.append(
+                            f"**Title odds swing:** {leader_name} is on pace for **{leader_pace:.0f} pts** — "
+                            f"that's {title_gap:.0f} points above the historical title-winning average ({avg_title:.0f}). "
+                            f"Dominant season in the making."
+                        )
+                    elif title_gap < -5:
+                        hook_insights.append(
+                            f"**Title race wide open:** {leader_name} leads but is on pace for just "
+                            f"**{leader_pace:.0f} pts** — below the typical title-winning average of {avg_title:.0f}. "
+                            f"Anyone's season."
+                        )
+                    else:
+                        hook_insights.append(
+                            f"**Title race:** {leader_name} tracks the historical title pace "
+                            f"({leader_pace:.0f} pts projected vs {avg_title:.0f} avg). Tight at the top."
+                        )
+
+        if hook_insights:
+            st.markdown(
+                '<div style="background: linear-gradient(135deg, #0f2027 0%, #203a43 50%, #2c5364 100%); '
+                'border-radius: 12px; padding: 20px; margin: 10px 0; '
+                'border-left: 4px solid #00d4ff;">'
+                '<span style="font-size: 1.1em; font-weight: bold; color: #00d4ff;">'
+                f'This Week\'s Insights — {selected_league}</span></div>',
+                unsafe_allow_html=True,
+            )
+            for insight in hook_insights:
+                st.markdown(f"- {insight}")
+            st.markdown("")
+
     if has_league_tables:
         tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
             "League Table",
@@ -1300,6 +1407,7 @@ try:
                 use_container_width=True,
                 height=table_height,
             )
+            share_table_buttons(single_season[display_cols], f"{selected_league} {season_label} Table", f"league_table_{season}")
 
             if "GF" in single_season.columns and "GA" in single_season.columns:
                 st.subheader("Goals Scored vs Conceded")
@@ -1853,6 +1961,7 @@ try:
                 st.markdown(f"**{len(takers_sorted)} taker{'s' if len(takers_sorted) != 1 else ''}** found.")
                 table_height = min(500, max(80, 35 + len(takers_sorted) * 35))
                 st.dataframe(takers_sorted, use_container_width=True, height=table_height)
+                share_table_buttons(takers_sorted, f"{selected_league} Penalty Takers", "pen_takers")
             taker_search_fragment()
 
             st.caption(
@@ -2015,6 +2124,7 @@ try:
                     st.markdown(f"**{len(gks_sorted)} goalkeeper{'s' if len(gks_sorted) != 1 else ''}** found.")
                     table_height = min(500, max(80, 35 + len(gks_sorted) * 35))
                     st.dataframe(gks_sorted, use_container_width=True, height=table_height)
+                    share_table_buttons(gks_sorted, f"{selected_league} Penalty GKs", "pen_gks")
                 gk_search_fragment()
             else:
                 st.warning("Could not load goalkeeper penalty records.")
@@ -3297,6 +3407,7 @@ try:
                     display_team = display_team[[c for c in display_team.columns if c in team_data.columns]]
                     display_team.index = range(1, len(display_team) + 1)
                     st.dataframe(display_team, use_container_width=True)
+                    share_table_buttons(display_team, f"{selected_team} Season Records", f"team_{selected_team}")
 
                     st.caption(f"Data source: Wikipedia {selected_league} season articles. Points standardised to 3-for-a-win system.")
             else:
