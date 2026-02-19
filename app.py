@@ -17,6 +17,149 @@ from datetime import datetime, timedelta
 
 st.set_page_config(page_title="Football Econometrics Dashboard", layout="wide")
 
+st.markdown("""
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+    /* ===== RESPONSIVE LAYOUT ===== */
+
+    /* Mobile phones (up to 768px) */
+    @media (max-width: 768px) {
+        .main .block-container {
+            padding-left: 0.5rem !important;
+            padding-right: 0.5rem !important;
+            max-width: 100% !important;
+        }
+
+        /* Stack columns vertically on mobile */
+        [data-testid="stHorizontalBlock"] {
+            flex-wrap: wrap !important;
+        }
+        [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {
+            width: 100% !important;
+            flex: 1 1 100% !important;
+            min-width: 100% !important;
+        }
+
+        /* Make tables scrollable horizontally */
+        [data-testid="stDataFrame"],
+        [data-testid="stTable"],
+        .stDataFrame {
+            overflow-x: auto !important;
+            -webkit-overflow-scrolling: touch !important;
+        }
+        [data-testid="stDataFrame"] table {
+            font-size: 0.75rem !important;
+        }
+
+        /* Reduce font sizes */
+        h1 { font-size: 1.4rem !important; }
+        h2 { font-size: 1.2rem !important; }
+        h3 { font-size: 1.05rem !important; }
+
+        /* Tabs: scrollable on mobile */
+        [data-testid="stTabs"] [data-baseweb="tab-list"] {
+            overflow-x: auto !important;
+            -webkit-overflow-scrolling: touch !important;
+            flex-wrap: nowrap !important;
+            gap: 0 !important;
+        }
+        [data-testid="stTabs"] [data-baseweb="tab"] {
+            white-space: nowrap !important;
+            font-size: 0.8rem !important;
+            padding: 0.4rem 0.6rem !important;
+        }
+
+        /* Sidebar adjustments */
+        [data-testid="stSidebar"] {
+            min-width: 240px !important;
+            max-width: 280px !important;
+        }
+        [data-testid="stSidebar"] .block-container {
+            padding: 0.5rem !important;
+        }
+
+        /* Plotly charts responsive */
+        .js-plotly-plot, .plotly {
+            width: 100% !important;
+        }
+        .js-plotly-plot .plot-container {
+            width: 100% !important;
+        }
+
+        /* Metrics */
+        [data-testid="stMetric"] {
+            padding: 0.3rem !important;
+        }
+        [data-testid="stMetricValue"] {
+            font-size: 1.1rem !important;
+        }
+        [data-testid="stMetricLabel"] {
+            font-size: 0.75rem !important;
+        }
+
+        /* Expanders */
+        [data-testid="stExpander"] summary {
+            font-size: 0.9rem !important;
+        }
+    }
+
+    /* Tablets (769px to 1024px) */
+    @media (min-width: 769px) and (max-width: 1024px) {
+        .main .block-container {
+            padding-left: 1rem !important;
+            padding-right: 1rem !important;
+            max-width: 100% !important;
+        }
+
+        /* Allow 2 columns on tablet, wrap extras */
+        [data-testid="stHorizontalBlock"] {
+            flex-wrap: wrap !important;
+        }
+        [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {
+            min-width: 45% !important;
+            flex: 1 1 45% !important;
+        }
+
+        /* Tables scrollable */
+        [data-testid="stDataFrame"],
+        [data-testid="stTable"],
+        .stDataFrame {
+            overflow-x: auto !important;
+        }
+
+        h1 { font-size: 1.6rem !important; }
+        h2 { font-size: 1.35rem !important; }
+
+        /* Tabs */
+        [data-testid="stTabs"] [data-baseweb="tab-list"] {
+            overflow-x: auto !important;
+            flex-wrap: nowrap !important;
+        }
+        [data-testid="stTabs"] [data-baseweb="tab"] {
+            font-size: 0.85rem !important;
+            padding: 0.5rem 0.7rem !important;
+        }
+    }
+
+    /* Ensure images and charts never overflow */
+    img, svg, canvas, video, .js-plotly-plot {
+        max-width: 100% !important;
+        height: auto !important;
+    }
+
+    /* Make all plotly charts responsive */
+    .js-plotly-plot .plotly .main-svg {
+        width: 100% !important;
+    }
+
+    /* Ensure dataframes don't break layout */
+    [data-testid="stDataFrame"] > div {
+        max-width: 100% !important;
+        overflow-x: auto !important;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
 
