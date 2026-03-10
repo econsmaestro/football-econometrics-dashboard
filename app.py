@@ -232,6 +232,18 @@ def get_good_reviews():
     return rows
 
 
+def get_all_reviews():
+    conn = get_db_conn()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT username, rating, comment, created_at FROM reviews ORDER BY created_at DESC"
+    )
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    return rows
+
+
 def get_analytics_data():
     conn = get_db_conn()
     cur = conn.cursor()
@@ -355,7 +367,7 @@ with st.sidebar:
     st.header("Navigation")
     nav_page = st.radio(
         "Go to",
-        ["Dashboard", "Analytics"],
+        ["Dashboard", "Analytics", "Feedback"],
         index=0,
         key="nav_page",
         horizontal=True,
@@ -581,6 +593,215 @@ if nav_page == "Analytics":
             st.plotly_chart(fig_rd, use_container_width=True)
         else:
             st.info("No reviews yet.")
+
+    st.stop()
+
+if nav_page == "Feedback":
+    record_visit(st.session_state.session_id, "Feedback")
+    st.title("Feedback Dashboard")
+    st.caption("Share your thoughts and see what others are saying about the Football Econometrics Dashboard")
+
+    if "show_goal_animation" not in st.session_state:
+        st.session_state.show_goal_animation = False
+
+    if st.session_state.show_goal_animation:
+        st.markdown("""
+        <div id="goal-animation-overlay" style="
+            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+            background: rgba(0,0,0,0.85); z-index: 9999;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            animation: fadeInOverlay 0.3s ease-in;
+        ">
+            <style>
+                @keyframes fadeInOverlay { from { opacity: 0; } to { opacity: 1; } }
+                @keyframes ballKick {
+                    0% { transform: translate(0, 200px) scale(1); opacity: 1; }
+                    40% { transform: translate(0, -20px) scale(1.3); opacity: 1; }
+                    60% { transform: translate(0, -40px) scale(1.1); opacity: 1; }
+                    100% { transform: translate(0, -60px) scale(1); opacity: 1; }
+                }
+                @keyframes netShake {
+                    0%, 100% { transform: scaleX(1); }
+                    25% { transform: scaleX(1.03); }
+                    50% { transform: scaleX(0.97); }
+                    75% { transform: scaleX(1.02); }
+                }
+                @keyframes goalTextPop {
+                    0% { transform: scale(0); opacity: 0; }
+                    50% { transform: scale(1.3); opacity: 1; }
+                    70% { transform: scale(0.9); }
+                    100% { transform: scale(1); opacity: 1; }
+                }
+                @keyframes confettiFall {
+                    0% { transform: translateY(-10px) rotate(0deg); opacity: 1; }
+                    100% { transform: translateY(400px) rotate(720deg); opacity: 0; }
+                }
+                .confetti-piece {
+                    position: absolute; width: 10px; height: 10px; top: 80px;
+                    animation: confettiFall 2.5s ease-in forwards;
+                }
+            </style>
+            <svg width="320" height="220" viewBox="0 0 320 220" style="animation: netShake 0.5s ease-in-out 0.6s 3;">
+                <rect x="40" y="20" width="240" height="160" rx="5" fill="none" stroke="white" stroke-width="4"/>
+                <line x1="40" y1="60" x2="280" y2="60" stroke="white" stroke-width="1" opacity="0.4"/>
+                <line x1="40" y1="100" x2="280" y2="100" stroke="white" stroke-width="1" opacity="0.4"/>
+                <line x1="40" y1="140" x2="280" y2="140" stroke="white" stroke-width="1" opacity="0.4"/>
+                <line x1="120" y1="20" x2="120" y2="180" stroke="white" stroke-width="1" opacity="0.4"/>
+                <line x1="200" y1="20" x2="200" y2="180" stroke="white" stroke-width="1" opacity="0.4"/>
+                <rect x="40" y="20" width="240" height="160" rx="5" fill="rgba(255,255,255,0.05)"/>
+                <circle cx="160" cy="130" r="22" fill="white" stroke="#333" stroke-width="2"
+                        style="animation: ballKick 0.8s ease-out forwards;">
+                    <animate attributeName="cy" from="200" to="100" dur="0.7s" fill="freeze"/>
+                </circle>
+                <path d="M160 108 L148 118 L152 132 L168 132 L172 118 Z" fill="#333" opacity="0.8">
+                    <animate attributeName="opacity" from="0" to="0.8" dur="0.7s" fill="freeze"/>
+                </path>
+            </svg>
+            <div style="animation: goalTextPop 0.6s ease-out 0.5s both;">
+                <h1 style="color: #2ecc71; font-size: 3em; margin: 10px 0; text-shadow: 0 0 30px rgba(46,204,113,0.5);">
+                    GOAL!
+                </h1>
+            </div>
+            <div style="animation: goalTextPop 0.6s ease-out 0.8s both;">
+                <p style="color: white; font-size: 1.4em; margin: 0;">Feedback Submitted Successfully!</p>
+            </div>
+            <div style="animation: goalTextPop 0.5s ease-out 1.2s both;">
+                <p style="color: #aaa; font-size: 1em; margin-top: 5px;">Thank you for helping us improve ⚽</p>
+            </div>
+            <div class="confetti-piece" style="left:15%; background:#2ecc71; animation-delay:0.5s; border-radius:50%;"></div>
+            <div class="confetti-piece" style="left:25%; background:#f1c40f; animation-delay:0.7s;"></div>
+            <div class="confetti-piece" style="left:35%; background:#e74c3c; animation-delay:0.6s; border-radius:50%;"></div>
+            <div class="confetti-piece" style="left:45%; background:#3498db; animation-delay:0.8s;"></div>
+            <div class="confetti-piece" style="left:55%; background:#2ecc71; animation-delay:0.5s;"></div>
+            <div class="confetti-piece" style="left:65%; background:#f1c40f; animation-delay:0.9s; border-radius:50%;"></div>
+            <div class="confetti-piece" style="left:75%; background:#e74c3c; animation-delay:0.7s;"></div>
+            <div class="confetti-piece" style="left:85%; background:#3498db; animation-delay:0.6s; border-radius:50%;"></div>
+            <script>
+                setTimeout(function() {
+                    var overlay = document.getElementById('goal-animation-overlay');
+                    if (overlay) {
+                        overlay.style.transition = 'opacity 0.5s';
+                        overlay.style.opacity = '0';
+                        setTimeout(function() { overlay.remove(); }, 500);
+                    }
+                }, 3500);
+            </script>
+        </div>
+        """, unsafe_allow_html=True)
+        st.session_state.show_goal_animation = False
+
+    st.subheader("Submit Your Feedback")
+    st.caption("Your feedback helps us improve. Leave a rating and an optional comment.")
+
+    with st.form("feedback_form_page", clear_on_submit=True):
+        fb_cols = st.columns([1, 1, 2])
+        with fb_cols[0]:
+            fb_username = st.text_input("Your name", max_chars=100, placeholder="e.g. FootballFan99")
+        with fb_cols[1]:
+            fb_rating = st.select_slider(
+                "Rating",
+                options=[1, 2, 3, 4, 5],
+                value=5,
+                format_func=lambda x: "\u2605" * x + "\u2606" * (5 - x),
+            )
+        with fb_cols[2]:
+            fb_comment = st.text_area("Comment (optional)", max_chars=500, placeholder="What did you like? Any suggestions?", height=80)
+
+        submitted = st.form_submit_button("Submit Review", type="primary", use_container_width=True)
+        if submitted:
+            if not fb_username or not fb_username.strip():
+                st.error("Please enter your name.")
+            else:
+                try:
+                    submit_review(fb_username.strip(), fb_rating, fb_comment.strip() if fb_comment else None)
+                    st.session_state.show_goal_animation = True
+                    st.rerun()
+                except Exception as ex:
+                    st.error("Could not save your review. Please try again.")
+
+    st.divider()
+
+    all_reviews = get_all_reviews()
+
+    rev_col1, rev_col2, rev_col3 = st.columns(3)
+    total_count = len(all_reviews)
+    avg_rating_fb = sum(r[1] for r in all_reviews) / total_count if total_count > 0 else 0
+    five_star_count = sum(1 for r in all_reviews if r[1] == 5)
+    with rev_col1:
+        st.metric("Total Reviews", total_count)
+    with rev_col2:
+        if total_count > 0:
+            st.metric("Average Rating", f"{avg_rating_fb:.1f} / 5.0")
+        else:
+            st.metric("Average Rating", "N/A")
+    with rev_col3:
+        st.metric("5-Star Reviews", five_star_count)
+
+    if total_count > 0:
+        st.divider()
+        rating_counts = {}
+        for r in all_reviews:
+            rating_counts[r[1]] = rating_counts.get(r[1], 0) + 1
+        rc_col1, rc_col2 = st.columns(2)
+        with rc_col1:
+            st.subheader("Rating Distribution")
+            rd_data = []
+            for star in range(5, 0, -1):
+                count = rating_counts.get(star, 0)
+                pct = (count / total_count * 100) if total_count > 0 else 0
+                rd_data.append({"Rating": f"{star} Star{'s' if star > 1 else ''}", "Count": count, "Percentage": pct})
+            rd_df = pd.DataFrame(rd_data)
+            rating_colors = {"5 Stars": "#2ecc71", "4 Stars": "#3498db", "3 Stars": "#f1c40f", "2 Stars": "#e74c3c", "1 Star": "#c0392b"}
+            fig_rd = px.bar(rd_df, x="Count", y="Rating", orientation="h", template="plotly_dark",
+                           color="Rating", color_discrete_map=rating_colors)
+            fig_rd.update_layout(height=250, showlegend=False, yaxis=dict(categoryorder="array", categoryarray=[f"{s} Star{'s' if s > 1 else ''}" for s in range(5, 0, -1)]))
+            st.plotly_chart(fig_rd, use_container_width=True)
+
+        with rc_col2:
+            st.subheader("Sentiment Breakdown")
+            positive = sum(1 for r in all_reviews if r[1] >= 4)
+            neutral = sum(1 for r in all_reviews if r[1] == 3)
+            negative = sum(1 for r in all_reviews if r[1] <= 2)
+            sent_df = pd.DataFrame({"Sentiment": ["Positive (4-5)", "Neutral (3)", "Negative (1-2)"], "Count": [positive, neutral, negative]})
+            sent_colors = {"Positive (4-5)": "#2ecc71", "Neutral (3)": "#f1c40f", "Negative (1-2)": "#e74c3c"}
+            fig_sent = px.pie(sent_df, values="Count", names="Sentiment", template="plotly_dark",
+                             color="Sentiment", color_discrete_map=sent_colors)
+            fig_sent.update_layout(height=250)
+            fig_sent.update_traces(textposition="inside", textinfo="percent+label")
+            st.plotly_chart(fig_sent, use_container_width=True)
+
+        st.divider()
+        st.subheader("All Reviews")
+
+        filter_col1, filter_col2 = st.columns([1, 3])
+        with filter_col1:
+            filter_rating = st.selectbox("Filter by rating", ["All", "5 Stars", "4 Stars", "3 Stars", "2 Stars", "1 Star"])
+
+        filtered_reviews = all_reviews
+        if filter_rating != "All":
+            filter_val = int(filter_rating[0])
+            filtered_reviews = [r for r in all_reviews if r[1] == filter_val]
+
+        if filtered_reviews:
+            st.caption(f"Showing {len(filtered_reviews)} review{'s' if len(filtered_reviews) != 1 else ''}")
+            for username, rating, comment, created_at in filtered_reviews:
+                with st.container():
+                    r_cols = st.columns([1, 3, 1])
+                    with r_cols[0]:
+                        st.markdown(f"**{username}**")
+                        st.markdown(render_star_display(rating), unsafe_allow_html=True)
+                    with r_cols[1]:
+                        if comment:
+                            st.markdown(f'"{comment}"')
+                        else:
+                            st.markdown("*No comment*", help="This user did not leave a comment")
+                    with r_cols[2]:
+                        st.caption(created_at.strftime("%b %d, %Y") if hasattr(created_at, 'strftime') else str(created_at))
+                    st.markdown("---")
+        else:
+            st.info("No reviews match the selected filter.")
+    else:
+        st.info("No reviews yet. Be the first to leave feedback!")
 
     st.stop()
 
@@ -3885,31 +4106,4 @@ st.markdown(
 )
 
 st.divider()
-st.subheader("Rate This Dashboard")
-st.caption("Your feedback helps us improve. Leave a rating and an optional comment.")
-
-with st.form("feedback_form", clear_on_submit=True):
-    feedback_cols = st.columns([1, 1, 2])
-    with feedback_cols[0]:
-        fb_username = st.text_input("Your name", max_chars=100, placeholder="e.g. FootballFan99")
-    with feedback_cols[1]:
-        fb_rating = st.select_slider(
-            "Rating",
-            options=[1, 2, 3, 4, 5],
-            value=5,
-            format_func=lambda x: "\u2605" * x + "\u2606" * (5 - x),
-        )
-    with feedback_cols[2]:
-        fb_comment = st.text_area("Comment (optional)", max_chars=500, placeholder="What did you like? Any suggestions?", height=80)
-
-    submitted = st.form_submit_button("Submit Review", type="primary", use_container_width=True)
-    if submitted:
-        if not fb_username or not fb_username.strip():
-            st.error("Please enter your name.")
-        else:
-            try:
-                submit_review(fb_username.strip(), fb_rating, fb_comment.strip() if fb_comment else None)
-                st.success("Thank you for your feedback!")
-                st.balloons()
-            except Exception as ex:
-                st.error(f"Could not save your review. Please try again.")
+st.markdown("**Want to leave feedback?** Use the **Feedback** tab in the sidebar navigation to rate this dashboard and see what others think.")
