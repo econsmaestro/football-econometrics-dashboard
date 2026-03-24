@@ -157,6 +157,95 @@ st.markdown("""
         max-width: 100% !important;
         overflow-x: auto !important;
     }
+
+    /* ===== ANIMATIONS ===== */
+    @keyframes slideInUp {
+        from { transform: translateY(20px); opacity: 0; }
+        to   { transform: translateY(0);    opacity: 1; }
+    }
+    @keyframes fadeIn {
+        from { opacity: 0; }
+        to   { opacity: 1; }
+    }
+    @keyframes pulse-glow {
+        0%, 100% { box-shadow: 0 0 0 0 rgba(46, 204, 113, 0.5); }
+        50%       { box-shadow: 0 0 0 7px rgba(46, 204, 113, 0); }
+    }
+    @keyframes gradientShift {
+        0%   { background-position: 0% 50%; }
+        50%  { background-position: 100% 50%; }
+        100% { background-position: 0% 50%; }
+    }
+    @keyframes redPulse {
+        0%, 100% { opacity: 1; transform: scale(1); }
+        50%       { opacity: 0.8; transform: scale(1.06); }
+    }
+
+    /* Metric cards slide in on render */
+    [data-testid="stMetric"] {
+        animation: slideInUp 0.42s ease-out both;
+    }
+
+    /* Tab content fades in when switching */
+    [data-testid="stTabContent"] > div {
+        animation: fadeIn 0.32s ease-in;
+    }
+
+    /* Animated gradient insight header */
+    .anim-insight-header {
+        background: linear-gradient(270deg, #0f2027, #203a43, #2c5364, #1a1a2e, #203a43);
+        background-size: 400% 400%;
+        animation: gradientShift 10s ease infinite;
+        border-radius: 12px;
+        padding: 18px 22px;
+        margin: 10px 0 14px;
+        border-left: 4px solid #00d4ff;
+    }
+
+    /* Live season badge */
+    .live-badge {
+        display: inline-block;
+        background: #e74c3c;
+        color: #fff;
+        font-size: 0.62em;
+        font-weight: 800;
+        letter-spacing: 0.07em;
+        padding: 2px 8px;
+        border-radius: 20px;
+        animation: redPulse 1.6s ease-in-out infinite;
+        margin-left: 8px;
+        vertical-align: middle;
+    }
+
+    /* Complete badge */
+    .complete-badge {
+        display: inline-block;
+        color: #2ecc71;
+        font-size: 0.68em;
+        font-weight: 700;
+        margin-left: 8px;
+        vertical-align: middle;
+    }
+
+    /* Season progress bar */
+    .season-progress-wrap {
+        background: rgba(255,255,255,0.08);
+        border-radius: 8px;
+        height: 7px;
+        overflow: hidden;
+        margin: 5px 0 14px;
+    }
+    .season-progress-bar {
+        height: 100%;
+        border-radius: 8px;
+        background: linear-gradient(90deg, #2ecc71, #00d4ff);
+        transition: width 1.5s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+
+    /* Probability outcome cards */
+    .prob-card {
+        animation: slideInUp 0.5s ease-out both;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -1879,11 +1968,9 @@ try:
 
         if hook_insights:
             st.markdown(
-                '<div style="background: linear-gradient(135deg, #0f2027 0%, #203a43 50%, #2c5364 100%); '
-                'border-radius: 12px; padding: 20px; margin: 10px 0; '
-                'border-left: 4px solid #00d4ff;">'
-                '<span style="font-size: 1.1em; font-weight: bold; color: #00d4ff;">'
-                f'This Week\'s Insights — {selected_league}</span></div>',
+                f'<div class="anim-insight-header">'
+                f'<span style="font-size:1.15em;font-weight:bold;color:#00d4ff;">&#9889; This Week\'s Insights — {selected_league}</span>'
+                f'</div>',
                 unsafe_allow_html=True,
             )
             for insight in hook_insights:
@@ -1942,6 +2029,21 @@ try:
                 height=table_height,
             )
             share_table_buttons(single_season[display_cols], f"{selected_league} {season_label} Table", f"league_table_{season}")
+
+            if "Pld" in single_season.columns and gps > 0:
+                _gp_now = int(single_season["Pld"].max())
+                _prog = min(100.0, _gp_now / gps * 100)
+                _is_live = _prog < 99.5
+                _status_html = '<span class="live-badge">LIVE</span>' if _is_live else '<span class="complete-badge">&#10003; COMPLETE</span>'
+                st.markdown(
+                    f'<div style="margin-bottom:2px;">'
+                    f'<span style="font-size:0.88em;color:#aaa;">Season progress: {_gp_now} / {gps} matchdays</span>'
+                    f'{_status_html}</div>'
+                    f'<div class="season-progress-wrap">'
+                    f'<div class="season-progress-bar" style="width:{_prog:.1f}%"></div>'
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
 
             if "GF" in single_season.columns and "GA" in single_season.columns:
                 st.subheader("Goals Scored vs Conceded")
@@ -2386,6 +2488,113 @@ try:
                         f"finish with approximately **{best_pred:.0f} points** (using the {model_label}), "
                         f"similar to **{closest['Squad'].values[0]}** ({closest['Pts'].values[0]:.0f} pts) "
                         f"in the {recent_label} season."
+                    )
+
+                st.divider()
+                st.markdown("**Form-Weighted Model (Exponential Decay / WLS)**")
+                st.markdown(
+                    "This model assigns **exponentially higher weight to recent seasons** (λ = 0.85 per season back) "
+                    "so current tactical trends, transfer inflation, and competitive dynamics have more influence "
+                    "than data from 10+ years ago. A **Weighted Least Squares (WLS)** regression is fitted using these weights."
+                )
+                if "Season_End" in multi_season.columns:
+                    _fw = multi_season[["Pts", "GF", "GA", "Season_End"]].dropna().copy()
+                    if len(_fw) > 5:
+                        _max_se = int(_fw["Season_End"].max())
+                        _fw["_wt"] = 0.85 ** (_max_se - _fw["Season_End"])
+                        _X_wls = sm.add_constant(_fw[["GF", "GA"]])
+                        _model_wls = sm.WLS(_fw["Pts"], _X_wls, weights=_fw["_wt"]).fit()
+                        _pred_wls = _model_wls.predict(new_X)[0]
+                        _wc1, _wc2, _wc3 = st.columns(3)
+                        _wc1.metric(
+                            "Form-Weighted Prediction",
+                            f"{_pred_wls:.1f} pts",
+                            f"{_pred_wls - predicted_pts:+.1f} vs OLS full history",
+                        )
+                        _wc2.metric("R² (weighted)", f"{_model_wls.rsquared:.4f}")
+                        _wc3.metric(
+                            "GF / |GA| coefficient",
+                            f"{_model_wls.params['GF']:.3f} / {abs(_model_wls.params['GA']):.3f}",
+                        )
+                        _gf_chg = _model_wls.params["GF"] - model_pred.params["GF"]
+                        _ga_chg = abs(_model_wls.params["GA"]) - abs(model_pred.params["GA"])
+                        st.markdown(
+                            f"In the form-weighted model, each goal scored is worth **{_model_wls.params['GF']:.3f} pts** "
+                            f"({'↑ more' if _gf_chg > 0.001 else '↓ less' if _gf_chg < -0.001 else '≈ same'} than full-history OLS value of {model_pred.params['GF']:.3f}), "
+                            f"and each goal conceded costs **{abs(_model_wls.params['GA']):.3f} pts** "
+                            f"({'↑ more costly' if _ga_chg > 0.001 else '↓ less costly' if _ga_chg < -0.001 else '≈ unchanged'} vs {abs(model_pred.params['GA']):.3f}). "
+                            f"{'Recent seasons show goals carry more weight than the long-run average.' if _gf_chg > 0.01 else 'The relationship between goals and points has been stable across eras.'}"
+                        )
+                        with st.expander("Formula: Weighted Least Squares", expanded=False):
+                            st.latex(r"\hat{\beta}_{WLS} = (X^T W X)^{-1} X^T W y")
+                            st.markdown(
+                                "Where **W** is a diagonal matrix of season weights. "
+                                f"Each season's weight = 0.85^(max_season − season_end), "
+                                "so the most recent season has weight 1.0, the season before 0.85, two seasons back 0.72, and so on."
+                            )
+
+                st.divider()
+                st.markdown("### Season Outcome Probability Estimator")
+                st.markdown(
+                    f"Based on every completed {selected_league} season in the selected range, "
+                    "estimate the historical likelihood of different outcomes for a team on a given points total. "
+                    "Drag the slider to run **what-if scenarios**."
+                )
+                _best_pred_prob = best_pred
+                _prob_pts = st.slider(
+                    "Projected final points",
+                    min_value=20, max_value=110,
+                    value=int(round(_best_pred_prob)),
+                    step=1,
+                    key="outcome_prob_slider",
+                    help="Defaults to the model's predicted points. Drag to explore scenarios.",
+                )
+                _comp_hist = multi_season[multi_season["Season_End"] < CURRENT_SEASON_END].copy() if "Season_End" in multi_season.columns else multi_season.copy()
+                if _comp_hist.empty:
+                    _comp_hist = multi_season.copy()
+                _n_teams_cfg = league_cfg["teams"]
+                _rl_pos_prob = max(_n_teams_cfg - 2, 3) if _n_teams_cfg > 0 else 18
+                _top_th = min(4, max(1, _n_teams_cfg // 5)) if _n_teams_cfg > 0 else 4
+                _margin = max(5, int(len(_comp_hist) ** 0.45))
+                _similar = _comp_hist[
+                    (_comp_hist["Pts"] >= _prob_pts - _margin) &
+                    (_comp_hist["Pts"] <= _prob_pts + _margin)
+                ]
+                if len(_similar) >= 3:
+                    _n_sim = len(_similar)
+                    _p_title = (_similar["Pos"] == 1).sum() / _n_sim * 100
+                    _p_top = (_similar["Pos"] <= _top_th).sum() / _n_sim * 100
+                    _p_rel = (_similar["Pos"] >= _rl_pos_prob).sum() / _n_sim * 100
+                    _pc1, _pc2, _pc3, _pc4 = st.columns(4)
+                    _pc1.metric("Title Won", f"{_p_title:.0f}%",
+                                help=f"Of {_n_sim} hist. teams within ±{_margin} pts of {_prob_pts}")
+                    _pc2.metric(f"Top {_top_th} Finish", f"{_p_top:.0f}%",
+                                help=f"Based on {_n_sim} comparable historical seasons")
+                    _pc3.metric("Relegation Risk", f"{_p_rel:.0f}%",
+                                help=f"% of similar-points teams who were relegated")
+                    _pc4.metric("Sample Seasons", str(_n_sim),
+                                help="Historical team-seasons in the points bracket")
+                    if _p_title > 50:
+                        st.success(f"A team on **{_prob_pts} pts** has historically won the {selected_league} title **{_p_title:.0f}%** of the time. Dominant.")
+                    elif _p_top > 65:
+                        st.info(f"A team on **{_prob_pts} pts** has a **{_p_top:.0f}%** historical chance of a top-{_top_th} finish.")
+                    elif _p_rel > 30:
+                        st.warning(f"Caution: teams on **{_prob_pts} pts** have historically been relegated **{_p_rel:.0f}%** of the time.")
+                    else:
+                        st.info(f"A team on **{_prob_pts} pts** typically finishes as a solid mid-table side with no serious relegation concerns.")
+                    with st.expander("How outcome probabilities are calculated"):
+                        st.markdown(
+                            f"We search all **{len(_comp_hist):,}** completed {selected_league} team-seasons in the selected range "
+                            f"for teams whose final points total fell within **±{_margin} pts** of **{_prob_pts}**, "
+                            f"finding **{_n_sim}** comparable historical seasons. "
+                            "We count how many of those teams won the title, finished top "
+                            f"{_top_th}, or were relegated — giving **empirical, assumption-free** probabilities. "
+                            "The margin automatically scales with dataset size to ensure adequate sample sizes."
+                        )
+                else:
+                    st.info(
+                        f"Not enough comparable historical data near {_prob_pts} pts (fewer than 3 seasons). "
+                        "Try expanding the season range in the sidebar to include more history."
                     )
 
             st.divider()
