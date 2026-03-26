@@ -94,6 +94,30 @@ def bayesian_penalty_conversion(taker_rate, gk_save_rate, league_avg_rate=0.76, 
     return round(shrunk_taker * (1 - gk_stop_prob) + shrunk_taker * gk_stop_prob * 0.1, 4)
 
 
+def load_fallback_penalty_data(league_name):
+    """Load static fallback penalty CSVs for a cup/tournament when Transfermarkt is unreachable.
+    Returns (takers_df, gks_df)."""
+    cup_map = {
+        "Champions League":            ("champions_league_takers.csv",  "champions_league_gks.csv"),
+        "Europa League":               ("europa_league_takers.csv",      "europa_league_gks.csv"),
+        "Conference League":           ("conference_league_takers.csv",  "conference_league_gks.csv"),
+        "FIFA World Cup":              ("world_cup_takers.csv",          "world_cup_gks.csv"),
+        "UEFA European Championship":  ("euros_takers.csv",              "euros_gks.csv"),
+        "AFC Asian Cup":               ("asian_cup_takers.csv",          "asian_cup_gks.csv"),
+        "Copa América":                ("copa_america_takers.csv",       "copa_america_gks.csv"),
+        "CONMEBOL Libertadores":       ("libertadores_takers.csv",       "libertadores_gks.csv"),
+    }
+    files = cup_map.get(league_name)
+    if not files:
+        return pd.DataFrame(), pd.DataFrame()
+    cups_dir = os.path.join(os.path.dirname(__file__), "fallback_data", "cups")
+    takers_path = os.path.join(cups_dir, files[0])
+    gks_path    = os.path.join(cups_dir, files[1])
+    takers = pd.read_csv(takers_path) if os.path.exists(takers_path) else pd.DataFrame()
+    gks    = pd.read_csv(gks_path)    if os.path.exists(gks_path)    else pd.DataFrame()
+    return takers, gks
+
+
 def load_fallback_data(league_name):
     """Load static fallback CSV for a league when live scraping fails."""
     mapping = {

@@ -15,7 +15,7 @@ import os
 import uuid
 import time
 from datetime import datetime, timedelta
-from models import load_fallback_data
+from models import load_fallback_data, load_fallback_penalty_data
 
 st.set_page_config(page_title="Football Econometrics Dashboard", layout="wide")
 
@@ -475,7 +475,7 @@ with st.sidebar:
     st.header("Navigation")
     nav_page = st.radio(
         "Go to",
-        ["Dashboard", "Analytics", "Feedback"],
+        ["Dashboard", "Analytics", "Feedback", "AI Scout"],
         index=0,
         key="nav_page",
         horizontal=True,
@@ -923,6 +923,111 @@ if nav_page == "Feedback":
             st.info("No reviews match the selected filter.")
     else:
         st.info("No reviews yet. Be the first to leave feedback!")
+
+    st.stop()
+
+# ── AI Scout ─────────────────────────────────────────────────────────────────
+if nav_page == "AI Scout":
+    import base64
+    import openai
+
+    record_visit(st.session_state.session_id, "AI Scout")
+
+    st.title("AI Football Scout")
+    st.caption(
+        "Ask anything about football stats, tactics, or econometrics — "
+        "or upload a screenshot of a league table / chart and ask for an explanation."
+    )
+
+    _BASE_URL = os.environ.get("AI_INTEGRATIONS_OPENAI_BASE_URL", "")
+    _API_KEY  = os.environ.get("AI_INTEGRATIONS_OPENAI_API_KEY", "")
+    _MODEL    = "gpt-4.1"
+
+    if not _BASE_URL or not _API_KEY:
+        st.error("OpenAI integration is not configured. Please set up the AI integration.")
+        st.stop()
+
+    _client = openai.OpenAI(base_url=_BASE_URL, api_key=_API_KEY)
+
+    _SYSTEM_PROMPT = (
+        "You are an expert football (soccer) analyst and econometrics tutor embedded inside a "
+        "Football Econometrics Dashboard that covers 30 competitions worldwide. "
+        "You can interpret league tables, regression outputs (OLS/WLS), correlation matrices, "
+        "points predictors, penalty statistics, and team insights shown in the app. "
+        "Explain football statistics and econometric concepts in plain, conversational English — "
+        "avoid unnecessary jargon, but be precise when the user asks for technical detail. "
+        "When the user uploads an image of a chart or table from the app, describe what you see "
+        "and provide relevant football-analytics insights."
+    )
+
+    if "ai_scout_messages" not in st.session_state:
+        st.session_state.ai_scout_messages = []
+
+    col_chat, col_upload = st.columns([3, 1])
+
+    with col_upload:
+        st.subheader("Upload a chart or table")
+        uploaded_image = st.file_uploader(
+            "Optional: attach a screenshot",
+            type=["png", "jpg", "jpeg", "webp"],
+            key="scout_image",
+            help="Upload any chart or table from the dashboard for the AI to analyse.",
+        )
+        if uploaded_image:
+            st.image(uploaded_image, caption="Image ready to send", use_container_width=True)
+
+        if st.button("Clear conversation", key="scout_clear"):
+            st.session_state.ai_scout_messages = []
+            st.rerun()
+
+    with col_chat:
+        for msg in st.session_state.ai_scout_messages:
+            with st.chat_message(msg["role"]):
+                st.markdown(msg["content"])
+
+        user_input = st.chat_input("Ask about stats, tactics, results, models…")
+
+        if user_input:
+            with st.chat_message("user"):
+                st.markdown(user_input)
+                if uploaded_image:
+                    st.image(uploaded_image, width=260)
+
+            # Build message content (text + optional image)
+            if uploaded_image:
+                uploaded_image.seek(0)
+                img_bytes = uploaded_image.read()
+                b64_img = base64.b64encode(img_bytes).decode("utf-8")
+                mime = uploaded_image.type or "image/png"
+                user_content = [
+                    {"type": "text", "text": user_input},
+                    {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64_img}"}},
+                ]
+            else:
+                user_content = user_input
+
+            st.session_state.ai_scout_messages.append({"role": "user", "content": user_input})
+
+            # Build messages list for the API call
+            api_messages = [{"role": "system", "content": _SYSTEM_PROMPT}]
+            for prev in st.session_state.ai_scout_messages[:-1]:
+                api_messages.append({"role": prev["role"], "content": prev["content"]})
+            api_messages.append({"role": "user", "content": user_content})
+
+            with st.chat_message("assistant"):
+                with st.spinner("Thinking…"):
+                    try:
+                        response = _client.chat.completions.create(
+                            model=_MODEL,
+                            messages=api_messages,
+                            max_completion_tokens=1024,
+                        )
+                        reply = response.choices[0].message.content
+                    except Exception as exc:
+                        reply = f"Sorry, I couldn't reach the AI right now. Details: {exc}"
+                st.markdown(reply)
+
+            st.session_state.ai_scout_messages.append({"role": "assistant", "content": reply})
 
     st.stop()
 
@@ -1589,7 +1694,7 @@ def load_multi_season_penalties(start_year, end_year, tm_slug, tm_code, has_gk_d
 
 
 @st.cache_data(ttl=604800, show_spinner=False)
-def load_alltime_taker_penalties(tm_slug, tm_code, start_year, season_type, is_cup=False):
+def load_alltime_taker_penalties(tm_slug, tm_code, start_year, season_type, is_cup=False, league_name=None):
     taker_frames = []
     for yr in range(start_year, CURRENT_SEASON_END + 1):
         try:
@@ -1601,6 +1706,16 @@ def load_alltime_taker_penalties(tm_slug, tm_code, start_year, season_type, is_c
             pass
 
     if not taker_frames:
+        if league_name:
+            fb_takers, _ = load_fallback_penalty_data(league_name)
+            if not fb_takers.empty:
+                fb_takers = fb_takers.copy()
+                if "Club" in fb_takers.columns and "Clubs" not in fb_takers.columns:
+                    fb_takers.rename(columns={"Club": "Clubs"}, inplace=True)
+                for col in ["Seasons", "First_Season", "Last_Season"]:
+                    if col not in fb_takers.columns:
+                        fb_takers[col] = "—"
+                return fb_takers
         return pd.DataFrame()
 
     all_takers = pd.concat(taker_frames, ignore_index=True)
@@ -1633,7 +1748,7 @@ def load_alltime_taker_penalties(tm_slug, tm_code, start_year, season_type, is_c
 
 
 @st.cache_data(ttl=604800, show_spinner=False)
-def load_alltime_gk_penalties(tm_slug, tm_code, start_year, season_type, is_cup=False):
+def load_alltime_gk_penalties(tm_slug, tm_code, start_year, season_type, is_cup=False, league_name=None):
     gk_frames = []
     for yr in range(start_year, CURRENT_SEASON_END + 1):
         try:
@@ -1645,6 +1760,16 @@ def load_alltime_gk_penalties(tm_slug, tm_code, start_year, season_type, is_cup=
             pass
 
     if not gk_frames:
+        if league_name:
+            _, fb_gks = load_fallback_penalty_data(league_name)
+            if not fb_gks.empty:
+                fb_gks = fb_gks.copy()
+                if "Club" in fb_gks.columns and "Clubs" not in fb_gks.columns:
+                    fb_gks.rename(columns={"Club": "Clubs"}, inplace=True)
+                for col in ["Seasons", "First_Season", "Last_Season", "Conceded"]:
+                    if col not in fb_gks.columns:
+                        fb_gks[col] = "—"
+                return fb_gks
         return pd.DataFrame()
 
     all_gks = pd.concat(gk_frames, ignore_index=True)
@@ -2873,8 +2998,12 @@ try:
             alltime_takers = load_alltime_taker_penalties(
                 league_cfg["tm_slug"], league_cfg["tm_code"],
                 league_cfg["start_year"], league_cfg["season_type"],
-                is_cup=league_cfg.get("is_cup", False)
+                is_cup=league_cfg.get("is_cup", False),
+                league_name=selected_league,
             )
+
+        if not alltime_takers.empty and "First_Season" in alltime_takers.columns and str(alltime_takers["First_Season"].iloc[0]) == "—":
+            st.info("Live data from Transfermarkt is currently unavailable. Showing cached penalty statistics.")
 
         if not alltime_takers.empty:
             takers_full = alltime_takers.copy()
@@ -3050,7 +3179,8 @@ try:
                 alltime_gks = load_alltime_gk_penalties(
                     league_cfg["tm_slug"], league_cfg["tm_code"],
                     league_cfg["start_year"], league_cfg["season_type"],
-                    is_cup=league_cfg.get("is_cup", False)
+                    is_cup=league_cfg.get("is_cup", False),
+                    league_name=selected_league,
                 )
 
             if not alltime_gks.empty:
