@@ -275,6 +275,12 @@ def init_db():
             page_name VARCHAR(200) NOT NULL,
             visited_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
+        CREATE TABLE IF NOT EXISTS ai_scout_usage (
+            uid VARCHAR(64) PRIMARY KEY,
+            week_key VARCHAR(10) NOT NULL,
+            count INTEGER NOT NULL DEFAULT 0,
+            updated_at TIMESTAMP DEFAULT NOW()
+        );
     """)
     conn.commit()
     cur.close()
@@ -933,18 +939,100 @@ if nav_page == "AI Scout":
 
     record_visit(st.session_state.session_id, "AI Scout")
 
-    st.title("AI Football Scout")
-    st.caption(
-        "Ask anything about football stats, tactics, or econometrics — "
-        "or upload a screenshot of a league table / chart and ask for an explanation."
-    )
+    _WEEKLY_LIMIT = 30
 
+    # ── Persistent UID via URL query param (survives refresh) ────────────────
+    _uid = st.query_params.get("uid", None)
+    if not _uid:
+        _uid = str(uuid.uuid4())
+        st.query_params["uid"] = _uid
+
+    # ── Week key: ISO week (Mon–Sun), UTC ────────────────────────────────────
+    def _current_week_key():
+        now_utc = datetime.utcnow()
+        iso = now_utc.isocalendar()
+        return f"{iso[0]}-W{iso[1]:02d}"
+
+    # ── DB helpers ───────────────────────────────────────────────────────────
+    def _get_scout_usage(uid):
+        try:
+            conn = get_db_conn()
+            cur = conn.cursor()
+            cur.execute("SELECT week_key, count FROM ai_scout_usage WHERE uid = %s", (uid,))
+            row = cur.fetchone()
+            cur.close()
+            conn.close()
+            if row:
+                return row[0], row[1]
+        except Exception:
+            pass
+        return _current_week_key(), 0
+
+    def _increment_scout_usage(uid, week_key):
+        try:
+            conn = get_db_conn()
+            cur = conn.cursor()
+            cur.execute(
+                """
+                INSERT INTO ai_scout_usage (uid, week_key, count, updated_at)
+                VALUES (%s, %s, 1, NOW())
+                ON CONFLICT (uid) DO UPDATE SET
+                    count = CASE
+                        WHEN ai_scout_usage.week_key = EXCLUDED.week_key
+                        THEN ai_scout_usage.count + 1
+                        ELSE 1
+                    END,
+                    week_key = EXCLUDED.week_key,
+                    updated_at = NOW()
+                """,
+                (uid, week_key),
+            )
+            conn.commit()
+            cur.close()
+            conn.close()
+        except Exception:
+            pass
+
+    def _friendly_ai_error(exc):
+        msg = str(exc).lower()
+        if "connection" in msg or "timeout" in msg or "unreachable" in msg or "name or service not known" in msg:
+            return (
+                "The AI service is temporarily unreachable — this is usually a brief network hiccup. "
+                "Please wait a moment and try again."
+            )
+        if "429" in msg or "rate_limit" in msg or "rate limit" in msg or "too many requests" in msg:
+            return (
+                "The AI service is very busy right now. Please wait a few seconds and try again — "
+                "your message has not been counted against your weekly limit."
+            )
+        if "502" in msg or "503" in msg or "500" in msg or "bad gateway" in msg or "service unavailable" in msg:
+            return (
+                "The AI service is experiencing a temporary issue on our end. "
+                "Please try again in a minute."
+            )
+        if "401" in msg or "403" in msg or "unauthorized" in msg or "forbidden" in msg:
+            return "There's an authentication issue with the AI service. Please contact the dashboard owner."
+        if "model" in msg and ("not found" in msg or "does not exist" in msg):
+            return "The AI model is currently unavailable. Please try again later."
+        return (
+            "Something went wrong when reaching the AI. "
+            "Please try your question again — if the problem persists, come back in a few minutes."
+        )
+
+    # ── Usage check ──────────────────────────────────────────────────────────
+    _week_key = _current_week_key()
+    _stored_week, _used_count = _get_scout_usage(_uid)
+    if _stored_week != _week_key:
+        _used_count = 0
+    _remaining = max(0, _WEEKLY_LIMIT - _used_count)
+
+    # ── OpenAI client ────────────────────────────────────────────────────────
     _BASE_URL = os.environ.get("AI_INTEGRATIONS_OPENAI_BASE_URL", "")
     _API_KEY  = os.environ.get("AI_INTEGRATIONS_OPENAI_API_KEY", "")
     _MODEL    = "gpt-4.1"
 
     if not _BASE_URL or not _API_KEY:
-        st.error("OpenAI integration is not configured. Please set up the AI integration.")
+        st.error("The AI service is not currently configured. Please check back later.")
         st.stop()
 
     _client = openai.OpenAI(base_url=_BASE_URL, api_key=_API_KEY)
@@ -962,6 +1050,24 @@ if nav_page == "AI Scout":
 
     if "ai_scout_messages" not in st.session_state:
         st.session_state.ai_scout_messages = []
+
+    # ── Page header ──────────────────────────────────────────────────────────
+    st.title("AI Football Scout")
+    st.caption(
+        "Ask anything about football stats, tactics, or econometrics — "
+        "or upload a screenshot of a league table / chart and ask for an explanation."
+    )
+
+    if _remaining > 0:
+        st.info(
+            f"You have **{_remaining} of {_WEEKLY_LIMIT} messages** left this week. "
+            "Your allowance resets every **Sunday at 23:59 GMT**."
+        )
+    else:
+        st.warning(
+            f"You've used all **{_WEEKLY_LIMIT} messages** for this week. "
+            "Your allowance resets every **Sunday at 23:59 GMT** — come back then!"
+        )
 
     col_chat, col_upload = st.columns([3, 1])
 
@@ -985,7 +1091,11 @@ if nav_page == "AI Scout":
             with st.chat_message(msg["role"]):
                 st.markdown(msg["content"])
 
-        user_input = st.chat_input("Ask about stats, tactics, results, models…")
+        if _remaining > 0:
+            user_input = st.chat_input("Ask about stats, tactics, results, models…")
+        else:
+            user_input = None
+            st.chat_input("Weekly limit reached — resets Sunday 23:59 GMT", disabled=True)
 
         if user_input:
             with st.chat_message("user"):
@@ -993,7 +1103,6 @@ if nav_page == "AI Scout":
                 if uploaded_image:
                     st.image(uploaded_image, width=260)
 
-            # Build message content (text + optional image)
             if uploaded_image:
                 uploaded_image.seek(0)
                 img_bytes = uploaded_image.read()
@@ -1008,7 +1117,6 @@ if nav_page == "AI Scout":
 
             st.session_state.ai_scout_messages.append({"role": "user", "content": user_input})
 
-            # Build messages list for the API call
             api_messages = [{"role": "system", "content": _SYSTEM_PROMPT}]
             for prev in st.session_state.ai_scout_messages[:-1]:
                 api_messages.append({"role": prev["role"], "content": prev["content"]})
@@ -1023,8 +1131,9 @@ if nav_page == "AI Scout":
                             max_completion_tokens=1024,
                         )
                         reply = response.choices[0].message.content
+                        _increment_scout_usage(_uid, _week_key)
                     except Exception as exc:
-                        reply = f"Sorry, I couldn't reach the AI right now. Details: {exc}"
+                        reply = _friendly_ai_error(exc)
                 st.markdown(reply)
 
             st.session_state.ai_scout_messages.append({"role": "assistant", "content": reply})
