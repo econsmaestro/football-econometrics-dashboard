@@ -1103,20 +1103,9 @@ if nav_page == "AI Scout":
         box-shadow: 0 2px 8px rgba(0,0,0,0.4);
     }
 
-    /* Hide only the visual clutter inside the dropzone (SVG, "Drag and drop"
-       text, file-size note) — but KEEP the Browse button so uploads work */
-    [data-testid="stFileUploaderDropzone"] > div:first-child { display: none !important; }
-    [data-testid="stFileUploaderDropzone"] > span         { display: none !important; }
-    [data-testid="stFileUploaderDropzone"] > small        { display: none !important; }
-    [data-testid="stFileUploaderDropzone"] {
-        padding: 0 !important; border: none !important;
-        background: transparent !important; min-height: 0 !important;
-    }
-    /* Hide the outer label too */
-    div[data-testid="stFileUploader"] > label { display: none !important; }
-    div[data-testid="stFileUploader"] section { padding: 0 !important; }
+    /* === File uploader → paperclip icon === */
 
-    /* Position the file uploader fixed at bottom-left, above the chat bar */
+    /* Position fixed bottom-left above chat bar */
     div[data-testid="stFileUploader"] {
         position: fixed !important;
         bottom: 72px !important;
@@ -1125,6 +1114,54 @@ if nav_page == "AI Scout":
         width: auto !important;
         background: transparent !important;
     }
+
+    /* Hide outer label */
+    div[data-testid="stFileUploader"] > label { display: none !important; }
+
+    /* Remove padding/border from the section wrapper */
+    div[data-testid="stFileUploader"] section {
+        padding: 0 !important;
+        border: none !important;
+        background: transparent !important;
+    }
+
+    /* Hide dropzone clutter: icon div, "Drag and drop" text, size limit note */
+    [data-testid="stFileUploaderDropzone"] > div:first-child { display: none !important; }
+    [data-testid="stFileUploaderDropzone"] > span            { display: none !important; }
+    [data-testid="stFileUploaderDropzone"] > small           { display: none !important; }
+    [data-testid="stFileUploaderDropzone"] {
+        padding: 0 !important;
+        border: none !important;
+        background: transparent !important;
+        min-height: 0 !important;
+    }
+
+    /* Style the Browse-files button as a paperclip icon */
+    [data-testid="stFileUploaderDropzone"] button {
+        background: rgba(255,255,255,0.08) !important;
+        border: 1.5px solid rgba(255,255,255,0.18) !important;
+        border-radius: 50% !important;
+        width: 40px !important;
+        height: 40px !important;
+        padding: 0 !important;
+        font-size: 0 !important;      /* hide "Browse files" text */
+        cursor: pointer !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        transition: background 0.2s !important;
+    }
+    [data-testid="stFileUploaderDropzone"] button:hover {
+        background: rgba(255,255,255,0.18) !important;
+    }
+    /* Show paperclip via pseudo-element */
+    [data-testid="stFileUploaderDropzone"] button::before {
+        content: "📎";
+        font-size: 20px;
+        line-height: 1;
+    }
+    /* Hide any inner spans ("Browse files" label text) */
+    [data-testid="stFileUploaderDropzone"] button span { display: none !important; }
     </style>
     <div id="scout-scroll-top">
       <button onclick="window.scrollTo({top:0,behavior:'smooth'})" title="Scroll to top">&#8679;</button>
