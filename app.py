@@ -2261,6 +2261,39 @@ try:
             )
             st.plotly_chart(fig_corr, use_container_width=True)
 
+            if "GD" in corr_matrix.columns and "Pts" in corr_matrix.columns:
+                gd_pts = corr_matrix.loc["GD", "Pts"]
+                gf_pts = corr_matrix.loc["GF", "Pts"] if "GF" in corr_matrix.columns else None
+                ga_pts = corr_matrix.loc["GA", "Pts"] if "GA" in corr_matrix.columns else None
+                _corr_lines = []
+                if gd_pts is not None:
+                    _corr_lines.append(
+                        f"- **Goal Difference vs Points** (r = {gd_pts:.2f}): "
+                        + ("Extremely strong — the more goals a team scores *relative to those conceded*, the more points they almost always get." if gd_pts >= 0.9
+                           else "Strong — goal difference is a reliable indicator of points." if gd_pts >= 0.75
+                           else "Moderate — goal difference is related to points but other factors also matter.")
+                    )
+                if gf_pts is not None:
+                    _corr_lines.append(
+                        f"- **Goals Scored vs Points** (r = {gf_pts:.2f}): "
+                        + ("Very strong — scoring lots of goals is closely tied to winning points." if gf_pts >= 0.8
+                           else "Moderate — scoring goals helps, but it doesn't guarantee points on its own." if gf_pts >= 0.5
+                           else "Weak — in this league, points come from more than just scoring goals.")
+                    )
+                if ga_pts is not None:
+                    _corr_lines.append(
+                        f"- **Goals Conceded vs Points** (r = {ga_pts:.2f}): "
+                        + ("Very strong negative — teams that concede a lot consistently end up with few points." if ga_pts <= -0.8
+                           else "Moderate negative — conceding fewer goals tends to mean more points." if ga_pts <= -0.5
+                           else "Weak negative — in this league, conceding doesn't damage points as much as you might expect.")
+                    )
+                st.info(
+                    "**What does this chart tell us — in plain English?**\n\n"
+                    + "\n".join(_corr_lines)
+                    + "\n\n*Hover over any cell for the exact value. "
+                    "Darker blue = strong positive link; darker red = strong negative link; white = no relationship.*"
+                )
+
             with st.expander("Formula: Pearson Correlation Coefficient", expanded=False):
                 st.latex(r"r_{xy} = \frac{\sum_{i=1}^{n}(x_i - \bar{x})(y_i - \bar{y})}{\sqrt{\sum_{i=1}^{n}(x_i - \bar{x})^2 \;\cdot\; \sum_{i=1}^{n}(y_i - \bar{y})^2}}")
                 st.markdown(
@@ -2455,6 +2488,15 @@ try:
 
         with tab3:
             st.subheader("Exploratory Visualizations")
+            st.info(
+                "**How to read these charts:**\n\n"
+                "Each dot represents one team in one season. The **diagonal line** (trendline) shows the overall pattern — "
+                "whether teams that score more goals (or concede fewer) tend to finish with more points.\n\n"
+                "- **Steeper upward line** = stronger relationship between that stat and points\n"
+                "- **Dots spread far from the line** = the relationship is noisy (other things also matter)\n"
+                "- **Dots clustered close to the line** = the stat is a reliable predictor of points\n\n"
+                "You can hover over any dot to see which team and season it represents."
+            )
 
             col_v1, col_v2 = st.columns(2)
 
@@ -2619,6 +2661,19 @@ try:
                         f"similar to **{closest['Squad'].values[0]}** ({closest['Pts'].values[0]:.0f} pts) "
                         f"in the {recent_label} season."
                     )
+
+                _best_pi = pi_recent if has_recent_model else pi
+                st.info(
+                    f"**What do these numbers mean?**\n\n"
+                    f"The model predicts **{best_pred:.0f} points** for a team that scores {pred_gf} goals "
+                    f"and concedes {pred_ga}. Think of this as the most likely outcome based on historical patterns "
+                    f"in the {selected_league}.\n\n"
+                    f"The **95% Confidence Interval ({_best_pi[0]:.0f} – {_best_pi[1]:.0f} pts)** is the range "
+                    f"within which the actual points total would fall 19 times out of 20, given this goal record. "
+                    f"A wider range means the league has more unpredictability; a narrower range means "
+                    f"goals are a very reliable predictor of points in this competition.\n\n"
+                    f"*Note: this prediction assumes a full season of {gps} games played.*"
+                )
 
                 st.divider()
                 st.markdown("**Form-Weighted Model (Exponential Decay / WLS)**")

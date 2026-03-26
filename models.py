@@ -102,6 +102,16 @@ def load_fallback_data(league_name):
         "Bundesliga": "bundesliga_2023_24.csv",
         "Serie A": "serie_a_2023_24.csv",
         "Ligue 1": "ligue_1_2023_24.csv",
+        "Eredivisie": "eredivisie_2023_24.csv",
+        "Scottish Premiership": "scottish_premiership_2023_24.csv",
+        "Saudi Pro League": "saudi_pro_league_2023_24.csv",
+        "Indian Super League": "indian_super_league_2023_24.csv",
+        "J1 League": "j1_league_2023.csv",
+        "K League 1": "k_league_1_2023.csv",
+        "Singapore Premier League": "singapore_premier_league_2023.csv",
+        "MLS": "mls_2023.csv",
+        "Brasileirão Série A": "brasileirao_2023.csv",
+        "Argentine Primera División": "argentine_primera_2023.csv",
     }
     filename = mapping.get(league_name)
     if not filename:

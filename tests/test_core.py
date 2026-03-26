@@ -207,6 +207,24 @@ class TestBayesianPenaltyConversion:
 # ---------------------------------------------------------------------------
 
 class TestLoadFallbackData:
+    ALL_LEAGUES = [
+        ("Premier League", 20),
+        ("La Liga", 20),
+        ("Bundesliga", 18),
+        ("Serie A", 20),
+        ("Ligue 1", 18),
+        ("Eredivisie", 18),
+        ("Scottish Premiership", 12),
+        ("Saudi Pro League", 18),
+        ("Indian Super League", 12),
+        ("J1 League", 18),
+        ("K League 1", 12),
+        ("Singapore Premier League", 8),
+        ("MLS", 30),
+        ("Brasileirão Série A", 20),
+        ("Argentine Primera División", 30),
+    ]
+
     def test_premier_league_fallback_loads(self):
         df = load_fallback_data("Premier League")
         assert not df.empty, "Premier League fallback CSV should load"
@@ -224,14 +242,22 @@ class TestLoadFallbackData:
         df = load_fallback_data("Made Up League FC")
         assert df.empty
 
-    def test_la_liga_fallback_loads(self):
-        df = load_fallback_data("La Liga")
-        assert not df.empty
+    @pytest.mark.parametrize("league,expected_teams", ALL_LEAGUES)
+    def test_all_leagues_load(self, league, expected_teams):
+        df = load_fallback_data(league)
+        assert not df.empty, f"{league} fallback should not be empty"
 
-    def test_bundesliga_fallback_has_18_teams(self):
-        df = load_fallback_data("Bundesliga")
-        assert len(df) == 18
+    @pytest.mark.parametrize("league,expected_teams", ALL_LEAGUES)
+    def test_all_leagues_team_count(self, league, expected_teams):
+        df = load_fallback_data(league)
+        assert len(df) == expected_teams, f"{league}: expected {expected_teams} teams, got {len(df)}"
 
-    def test_pts_column_is_numeric(self):
-        df = load_fallback_data("Serie A")
-        assert pd.api.types.is_numeric_dtype(df["Pts"]), "Pts column should be numeric"
+    @pytest.mark.parametrize("league,_", ALL_LEAGUES)
+    def test_all_leagues_pts_numeric(self, league, _):
+        df = load_fallback_data(league)
+        assert pd.api.types.is_numeric_dtype(df["Pts"]), f"{league}: Pts should be numeric"
+
+    @pytest.mark.parametrize("league,_", ALL_LEAGUES)
+    def test_all_leagues_pts_positive(self, league, _):
+        df = load_fallback_data(league)
+        assert (df["Pts"] >= 0).all(), f"{league}: all Pts should be >= 0"
