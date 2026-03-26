@@ -1090,28 +1090,44 @@ if nav_page == "AI Scout":
     if "scout_image_data" not in st.session_state:
         st.session_state.scout_image_data = None  # (bytes, mime) tuple or None
 
-    # ── CSS: compact file uploader (paperclip style) ─────────────────────────
+    # ── CSS: compact uploader + scroll-to-top + bottom-left upload bar ───────
     st.markdown("""
     <style>
-    /* Hide the big drop-zone; keep only the Browse button */
-    [data-testid="stFileUploaderDropzone"] { display: none !important; }
-    div[data-testid="stFileUploader"] > label { display: none !important; }
-    div[data-testid="stFileUploader"] section {
-        padding: 0 !important; min-height: 0 !important;
-        border: none !important; background: transparent !important;
+    /* Scroll-to-top: fixed top-right */
+    #scout-scroll-top {
+        position: fixed; top: 70px; right: 18px; z-index: 9999;
     }
-    /* Fixed scroll-to-top sits above the sticky chat input */
-    </style>
-    """, unsafe_allow_html=True)
+    #scout-scroll-top button {
+        background: #1565C0; color: white; border: none; border-radius: 50%;
+        width: 36px; height: 36px; font-size: 15px; cursor: pointer;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+    }
 
-    # ── Scroll-to-top fixed button ────────────────────────────────────────────
-    st.markdown("""
-    <div style="position:fixed;bottom:90px;right:18px;z-index:9999;">
-      <button onclick="document.querySelector('.main').scrollTo({top:0,behavior:'smooth'})"
-              title="Scroll to top"
-              style="background:#1565C0;color:white;border:none;border-radius:50%;
-                     width:36px;height:36px;font-size:15px;cursor:pointer;
-                     box-shadow:0 2px 8px rgba(0,0,0,0.4);">&#8679;</button>
+    /* Hide only the visual clutter inside the dropzone (SVG, "Drag and drop"
+       text, file-size note) — but KEEP the Browse button so uploads work */
+    [data-testid="stFileUploaderDropzone"] > div:first-child { display: none !important; }
+    [data-testid="stFileUploaderDropzone"] > span         { display: none !important; }
+    [data-testid="stFileUploaderDropzone"] > small        { display: none !important; }
+    [data-testid="stFileUploaderDropzone"] {
+        padding: 0 !important; border: none !important;
+        background: transparent !important; min-height: 0 !important;
+    }
+    /* Hide the outer label too */
+    div[data-testid="stFileUploader"] > label { display: none !important; }
+    div[data-testid="stFileUploader"] section { padding: 0 !important; }
+
+    /* Position the file uploader fixed at bottom-left, above the chat bar */
+    div[data-testid="stFileUploader"] {
+        position: fixed !important;
+        bottom: 72px !important;
+        left: 14px !important;
+        z-index: 1000 !important;
+        width: auto !important;
+        background: transparent !important;
+    }
+    </style>
+    <div id="scout-scroll-top">
+      <button onclick="window.scrollTo({top:0,behavior:'smooth'})" title="Scroll to top">&#8679;</button>
     </div>
     """, unsafe_allow_html=True)
 
@@ -1119,7 +1135,7 @@ if nav_page == "AI Scout":
     st.title("AI Football Scout")
     st.caption(
         "Ask anything about football stats, tactics, or econometrics — "
-        "or use the 📎 clip to attach a screenshot for the AI to analyse."
+        "or attach an image (📎) to let the AI analyse a screenshot."
     )
 
     if _remaining > 0:
@@ -1129,36 +1145,31 @@ if nav_page == "AI Scout":
         )
     else:
         st.warning(
-            f"You've used all **{_WEEKLY_LIMIT} messages** for this week. "
+            f"You've used all **{_WEEKLY_LIMIT} messages**  for this week. "
             "Your allowance resets every **Sunday at 23:59 GMT** — come back then!"
         )
 
-    # ── Toolbar: paperclip attachment + clear ────────────────────────────────
-    clip_col, status_col, clear_col = st.columns([1, 7, 1])
-    with clip_col:
-        st.markdown("📎")
-        uploaded_image = st.file_uploader(
-            "", type=["png", "jpg", "jpeg", "webp"],
-            key="scout_image", label_visibility="collapsed",
-            help="Attach a screenshot of a chart or table from the dashboard",
-        )
-        # Persist image bytes in session so it survives rerun
-        if uploaded_image is not None:
-            uploaded_image.seek(0)
-            st.session_state.scout_image_data = (uploaded_image.read(), uploaded_image.type or "image/png")
-        elif st.session_state.scout_image_data and uploaded_image is None:
-            # File was removed by the user
-            st.session_state.scout_image_data = None
+    # ── Clear button (top of chat area) ───────────────────────────────────────
+    if st.button("🗑️ Clear chat", key="scout_clear", help="Clear conversation"):
+        st.session_state.ai_scout_messages = []
+        st.session_state.scout_image_data = None
+        st.rerun()
 
-    with status_col:
-        if st.session_state.scout_image_data:
-            st.caption("📎 Image attached — will be sent with your next message.")
+    # ── Image status banner ───────────────────────────────────────────────────
+    if st.session_state.scout_image_data:
+        st.caption("📎 Image attached — will be sent with your next message.")
 
-    with clear_col:
-        if st.button("🗑️", key="scout_clear", help="Clear conversation"):
-            st.session_state.ai_scout_messages = []
-            st.session_state.scout_image_data = None
-            st.rerun()
+    # ── File uploader — CSS positions it fixed at bottom-left ────────────────
+    uploaded_image = st.file_uploader(
+        "📎 Attach image", type=["png", "jpg", "jpeg", "webp"],
+        key="scout_image", label_visibility="collapsed",
+        help="Attach a screenshot for the AI to analyse",
+    )
+
+    # Persist image bytes in session so it survives reruns
+    if uploaded_image is not None:
+        uploaded_image.seek(0)
+        st.session_state.scout_image_data = (uploaded_image.read(), uploaded_image.type or "image/png")
 
     # ── Message history (full width) ─────────────────────────────────────────
     for msg in st.session_state.ai_scout_messages:
