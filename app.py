@@ -1103,69 +1103,47 @@ if nav_page == "AI Scout":
         box-shadow: 0 2px 8px rgba(0,0,0,0.4);
     }
 
-    /* === File uploader → paperclip icon === */
+    /* === File uploader: transparent overlay over a visible paperclip === */
 
-    /* Position fixed bottom-left above chat bar */
+    /* Make the whole Streamlit uploader invisible but still interactive.
+       Sits above the visible paperclip div at exactly the same coordinates. */
     div[data-testid="stFileUploader"] {
         position: fixed !important;
         bottom: 72px !important;
         left: 14px !important;
-        z-index: 1000 !important;
-        width: auto !important;
-        background: transparent !important;
-    }
-
-    /* Hide outer label */
-    div[data-testid="stFileUploader"] > label { display: none !important; }
-
-    /* Remove padding/border from the section wrapper */
-    div[data-testid="stFileUploader"] section {
-        padding: 0 !important;
-        border: none !important;
-        background: transparent !important;
-    }
-
-    /* Hide dropzone clutter: icon div, "Drag and drop" text, size limit note */
-    [data-testid="stFileUploaderDropzone"] > div:first-child { display: none !important; }
-    [data-testid="stFileUploaderDropzone"] > span            { display: none !important; }
-    [data-testid="stFileUploaderDropzone"] > small           { display: none !important; }
-    [data-testid="stFileUploaderDropzone"] {
-        padding: 0 !important;
-        border: none !important;
-        background: transparent !important;
-        min-height: 0 !important;
-    }
-
-    /* Style the Browse-files button as a paperclip icon */
-    [data-testid="stFileUploaderDropzone"] button {
-        background: rgba(255,255,255,0.08) !important;
-        border: 1.5px solid rgba(255,255,255,0.18) !important;
-        border-radius: 50% !important;
-        width: 40px !important;
-        height: 40px !important;
-        padding: 0 !important;
-        font-size: 0 !important;      /* hide "Browse files" text */
+        z-index: 1001 !important;   /* above the visible paperclip */
+        opacity: 0 !important;
+        width: 44px !important;
+        height: 44px !important;
+        overflow: hidden !important;
         cursor: pointer !important;
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-        transition: background 0.2s !important;
     }
-    [data-testid="stFileUploaderDropzone"] button:hover {
-        background: rgba(255,255,255,0.18) !important;
+    /* Stretch every child to fill the 44×44 click area */
+    div[data-testid="stFileUploader"] > label,
+    div[data-testid="stFileUploader"] section,
+    [data-testid="stFileUploaderDropzone"],
+    [data-testid="stFileUploaderDropzone"] button,
+    [data-testid="stFileUploaderDropzone"] input {
+        position: absolute !important;
+        top: 0 !important; left: 0 !important;
+        width: 44px !important;
+        height: 44px !important;
+        margin: 0 !important; padding: 0 !important;
+        cursor: pointer !important;
     }
-    /* Show paperclip via pseudo-element */
-    [data-testid="stFileUploaderDropzone"] button::before {
-        content: "📎";
-        font-size: 20px;
-        line-height: 1;
-    }
-    /* Hide any inner spans ("Browse files" label text) */
-    [data-testid="stFileUploaderDropzone"] button span { display: none !important; }
     </style>
     <div id="scout-scroll-top">
       <button onclick="window.scrollTo({top:0,behavior:'smooth'})" title="Scroll to top">&#8679;</button>
     </div>
+    <!-- Visible paperclip sits BEHIND the transparent Streamlit uploader (z-index 1000 vs 1001).
+         pointer-events:none so clicks pass through to the interactive widget above. -->
+    <div id="scout-clip-visual"
+         style="position:fixed;bottom:72px;left:14px;z-index:1000;pointer-events:none;
+                width:44px;height:44px;border-radius:50%;
+                background:rgba(255,255,255,0.08);
+                border:1.5px solid rgba(255,255,255,0.22);
+                display:flex;align-items:center;justify-content:center;
+                font-size:22px;box-shadow:0 2px 8px rgba(0,0,0,0.3);">&#128206;</div>
     """, unsafe_allow_html=True)
 
     # ── Page header ──────────────────────────────────────────────────────────
