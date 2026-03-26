@@ -2151,10 +2151,13 @@ try:
 
             st.divider()
             st.subheader("OLS Regression: What Predicts League Points?")
-            st.markdown(
-                "**What is OLS Regression?** It's a statistical method that finds the best-fit "
-                "formula to predict one thing (Points) from other things (Goals Scored, Goals Conceded). "
-                "Think of it like finding the recipe: how much does each ingredient contribute to the final result?"
+            st.info(
+                "**What is OLS? (Ordinary Least Squares)**\n\n"
+                "Imagine drawing the single best straight line through a cloud of dots on a graph — "
+                "that's essentially what OLS does. It looks at *every* season in the data (from the very first to the most recent) "
+                "and treats them all as equally important. It finds the formula that is, on average, closest to all the data points.\n\n"
+                "**In plain English:** OLS answers the question — *across all seasons ever played, how many extra points does a team "
+                "earn for each additional goal scored, and how many points do they lose for each goal conceded?*"
             )
 
             with st.expander("Formula: OLS Regression", expanded=False):
@@ -2492,6 +2495,19 @@ try:
 
                 st.divider()
                 st.markdown("**Form-Weighted Model (Exponential Decay / WLS)**")
+                st.info(
+                    "**What is WLS? (Weighted Least Squares)**\n\n"
+                    "WLS works the same way as OLS — it still finds the best-fit formula — but instead of treating every season "
+                    "equally, it gives *more importance to recent seasons* and less to older ones. "
+                    "Think of it like asking a scout: *what matters in today's football?* not *what mattered on average across the last 30 years?*\n\n"
+                    "Here, each season back in time is worth 15% less than the one before it (λ = 0.85). So last season counts almost fully, "
+                    "five seasons ago counts about half as much, and seasons from 10+ years ago barely influence the result.\n\n"
+                    "**Why does this matter?** Modern football has changed — more goals are scored, tactics have evolved, and transfer fees "
+                    "have inflated. The WLS model captures *current* patterns rather than blending them with old ones.\n\n"
+                    "**OLS vs WLS at a glance:**\n"
+                    "- **OLS** = treats 1995 and 2024 the same — best for understanding long-run averages\n"
+                    "- **WLS** = weights 2024 much more than 1995 — best for predicting *today's* performance"
+                )
                 st.markdown(
                     "This model assigns **exponentially higher weight to recent seasons** (λ = 0.85 per season back) "
                     "so current tactical trends, transfer inflation, and competitive dynamics have more influence "
