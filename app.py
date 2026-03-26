@@ -1860,19 +1860,25 @@ try:
                 if overperformers:
                     overperformers.sort(key=lambda x: -x[3])
                     top = overperformers[0]
+                    _top_proj = round(top[1])
+                    _top_hist = round(top[2])
+                    _top_gap = _top_proj - _top_hist
                     hook_insights.append(
-                        f"**Biggest overperformer this season:** {top[0]} — on pace for **{top[1]:.0f} pts** "
-                        f"vs their historical average of {top[2]:.0f} pts (+{top[3]:.0f}). "
-                        f"{'Can they sustain it?' if top[3] > 10 else 'A solid step up.'}"
+                        f"**Biggest overperformer this season:** {top[0]} — on pace for **{_top_proj} pts** "
+                        f"vs their historical average of {_top_hist} pts (+{_top_gap}). "
+                        f"{'Can they sustain it?' if _top_gap > 10 else 'A solid step up.'}"
                     )
 
                 if underperformers:
                     underperformers.sort(key=lambda x: x[3])
                     bot = underperformers[0]
+                    _bot_proj = round(bot[1])
+                    _bot_hist = round(bot[2])
+                    _bot_gap = _bot_proj - _bot_hist
                     hook_insights.append(
-                        f"**Biggest underperformer:** {bot[0]} — projected for **{bot[1]:.0f} pts** "
-                        f"vs historical average {bot[2]:.0f} ({bot[3]:.0f}). "
-                        f"{'Crisis mode.' if bot[3] < -15 else 'A season to forget.'}"
+                        f"**Biggest underperformer:** {bot[0]} — projected for **{_bot_proj} pts** "
+                        f"vs historical average {_bot_hist} ({_bot_gap:+d}). "
+                        f"{'Crisis mode.' if _bot_gap < -15 else 'A season to forget.'}"
                     )
 
                 champ_pts = completed.groupby("Season").apply(lambda g: g["Pts"].max())
@@ -1882,22 +1888,25 @@ try:
                     leader_pace = leader["_pts_pace"]
                     title_gap = leader_pace - avg_title
                     leader_name = leader.get("Squad", "Leader")
+                    _lp = round(leader_pace)
+                    _at = round(avg_title)
+                    _tgap = _lp - _at
                     if title_gap > 5:
                         hook_insights.append(
-                            f"**Title odds swing:** {leader_name} is on pace for **{leader_pace:.0f} pts** — "
-                            f"that's {title_gap:.0f} points above the historical title-winning average ({avg_title:.0f}). "
+                            f"**Title odds swing:** {leader_name} is on pace for **{_lp} pts** — "
+                            f"that's {_tgap} points above the historical title-winning average ({_at}). "
                             f"Dominant season in the making."
                         )
                     elif title_gap < -5:
                         hook_insights.append(
                             f"**Title race wide open:** {leader_name} leads but is on pace for just "
-                            f"**{leader_pace:.0f} pts** — below the typical title-winning average of {avg_title:.0f}. "
+                            f"**{_lp} pts** — {abs(_tgap)} below the typical title-winning average of {_at}. "
                             f"Anyone's season."
                         )
                     else:
                         hook_insights.append(
                             f"**Title race:** {leader_name} tracks the historical title pace "
-                            f"({leader_pace:.0f} pts projected vs {avg_title:.0f} avg). Tight at the top."
+                            f"({_lp} pts projected vs {_at} avg). Tight at the top."
                         )
 
             if len(current_df) >= 2 and has_pts:
