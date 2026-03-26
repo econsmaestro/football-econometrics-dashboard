@@ -13,6 +13,7 @@ from scipy import stats
 import psycopg2
 import os
 import uuid
+import time
 from datetime import datetime, timedelta
 
 st.set_page_config(page_title="Football Econometrics Dashboard", layout="wide")
@@ -295,6 +296,23 @@ def record_visit(session_id, page_name):
         conn.close()
     except Exception:
         pass
+
+
+def check_recent_submission(username):
+    """Returns True if this username submitted a review in the last hour."""
+    try:
+        conn = get_db_conn()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT COUNT(*) FROM reviews WHERE LOWER(username) = LOWER(%s) AND created_at >= NOW() - INTERVAL '1 hour'",
+            (username,),
+        )
+        count = cur.fetchone()[0]
+        cur.close()
+        conn.close()
+        return count > 0
+    except Exception:
+        return False
 
 
 def submit_review(username, rating, comment):
@@ -801,12 +819,25 @@ if nav_page == "Feedback":
             if not fb_username or not fb_username.strip():
                 st.error("Please enter your name.")
             else:
-                try:
-                    submit_review(fb_username.strip(), fb_rating, fb_comment.strip() if fb_comment else None)
-                    st.session_state.show_goal_animation = True
-                    st.rerun()
-                except Exception as ex:
-                    st.error("Could not save your review. Please try again.")
+                _now = datetime.now()
+                _last_submit = st.session_state.get("_last_feedback_submit")
+                _cooldown_secs = 60
+                if _last_submit is not None and (_now - _last_submit).total_seconds() < _cooldown_secs:
+                    _wait = int(_cooldown_secs - (_now - _last_submit).total_seconds())
+                    st.warning(f"You just submitted a review. Please wait {_wait} second{'s' if _wait != 1 else ''} before submitting again.")
+                elif check_recent_submission(fb_username.strip()):
+                    st.warning(
+                        f"A review from **{fb_username.strip()}** was already submitted in the last hour. "
+                        "Please wait before submitting another, or use a different name."
+                    )
+                else:
+                    try:
+                        submit_review(fb_username.strip(), fb_rating, fb_comment.strip() if fb_comment else None)
+                        st.session_state["_last_feedback_submit"] = _now
+                        st.session_state.show_goal_animation = True
+                        st.rerun()
+                    except Exception as ex:
+                        st.error("Could not save your review. Please try again.")
 
     st.divider()
 
@@ -947,6 +978,27 @@ def format_season_label(yr, season_type):
     return str(yr)
 
 
+def _requests_get_with_retry(url, headers, timeout=30, retries=3, backoff=2.0):
+    last_exc = None
+    for attempt in range(retries):
+        try:
+            response = requests.get(url, headers=headers, timeout=timeout)
+            response.raise_for_status()
+            return response
+        except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
+            last_exc = e
+            if attempt < retries - 1:
+                time.sleep(backoff * (2 ** attempt))
+        except requests.exceptions.HTTPError as e:
+            if e.response is not None and e.response.status_code in (429, 503, 502):
+                last_exc = e
+                if attempt < retries - 1:
+                    time.sleep(backoff * (2 ** attempt))
+            else:
+                raise
+    raise last_exc
+
+
 @st.cache_data(ttl=604800, show_spinner=False)
 def fetch_season_data(season_val, wiki_pattern, wiki_name, season_type):
     if wiki_pattern is None or wiki_name is None:
@@ -968,8 +1020,7 @@ def fetch_season_data(season_val, wiki_pattern, wiki_name, season_type):
         )
     }
 
-    response = requests.get(url, headers=headers, timeout=30)
-    response.raise_for_status()
+    response = _requests_get_with_retry(url, headers)
 
     tables = pd.read_html(StringIO(response.text))
 
@@ -1186,8 +1237,7 @@ def scrape_penalty_takers(tm_slug, tm_code, season_id=None, is_cup=False):
             "Chrome/120.0.0.0 Safari/537.36"
         )
     }
-    response = requests.get(base_url, headers=headers, timeout=30)
-    response.raise_for_status()
+    response = _requests_get_with_retry(base_url, headers)
     soup = BeautifulSoup(response.text, "html.parser")
     tables = soup.find_all("table")
     if len(tables) < 2:
@@ -1237,8 +1287,7 @@ def scrape_penalty_goalkeepers(tm_slug, tm_code, season_id=None, is_cup=False):
             "Chrome/120.0.0.0 Safari/537.36"
         )
     }
-    response = requests.get(base_url, headers=headers, timeout=30)
-    response.raise_for_status()
+    response = _requests_get_with_retry(base_url, headers)
     soup = BeautifulSoup(response.text, "html.parser")
     tables = soup.find_all("table")
     if len(tables) < 2:
@@ -1632,8 +1681,7 @@ def search_player_transfermarkt(query):
             "Chrome/120.0.0.0 Safari/537.36"
         )
     }
-    response = requests.get(url, headers=headers, timeout=30)
-    response.raise_for_status()
+    response = _requests_get_with_retry(url, headers)
     soup = BeautifulSoup(response.text, "html.parser")
     results = []
     seen_ids = set()
@@ -1665,8 +1713,7 @@ def scrape_player_career_penalties(player_slug, player_id):
             "Chrome/120.0.0.0 Safari/537.36"
         )
     }
-    response = requests.get(url, headers=headers, timeout=30)
-    response.raise_for_status()
+    response = _requests_get_with_retry(url, headers)
     soup = BeautifulSoup(response.text, "html.parser")
 
     total_scored = 0
@@ -1808,16 +1855,42 @@ ZONE_PROBS = {
 
 has_league_tables = league_cfg["wiki_pattern"] is not None and league_cfg.get("wiki_name") is not None
 
+_single_season_error = None
+_multi_season_error = None
+
 try:
     if has_league_tables:
         st.session_state["_data_loading"] = True
+        gps = league_cfg["games_per_season"]
         with st.spinner("Fetching league data..."):
-            single_season_raw = fetch_season_data(int(season), league_cfg["wiki_pattern"], league_cfg["wiki_name"], league_cfg["season_type"])
-            multi_season_raw = load_multi_season(season_range[0], season_range[1], league_cfg["wiki_pattern"], league_cfg["wiki_name"], league_cfg["season_type"])
-            gps = league_cfg["games_per_season"]
-            single_season = rebase_to_standard_season(single_season_raw, gps)
-            multi_season = rebase_to_standard_season(multi_season_raw, gps)
+            try:
+                single_season_raw = fetch_season_data(int(season), league_cfg["wiki_pattern"], league_cfg["wiki_name"], league_cfg["season_type"])
+                single_season = rebase_to_standard_season(single_season_raw, gps)
+            except Exception as _e:
+                _single_season_error = str(_e)
+                single_season = pd.DataFrame()
+            try:
+                multi_season_raw = load_multi_season(season_range[0], season_range[1], league_cfg["wiki_pattern"], league_cfg["wiki_name"], league_cfg["season_type"])
+                multi_season = rebase_to_standard_season(multi_season_raw, gps)
+            except Exception as _e:
+                _multi_season_error = str(_e)
+                multi_season = pd.DataFrame()
         st.session_state["_data_loading"] = False
+
+        if _single_season_error and single_season.empty and not multi_season.empty:
+            most_recent = multi_season["Season_End"].max() if "Season_End" in multi_season.columns else None
+            if most_recent is not None:
+                single_season = multi_season[multi_season["Season_End"] == most_recent].copy()
+            st.warning(
+                f"Could not fetch the selected season from Wikipedia — showing the most recent available season instead. "
+                f"The page may have been renamed or is temporarily unavailable. (Detail: {_single_season_error})"
+            )
+        elif _single_season_error and single_season.empty:
+            st.warning(f"Could not load current season data: {_single_season_error}")
+
+        if _multi_season_error and multi_season.empty:
+            st.warning("Could not load historical season data. Some analysis tabs may be limited.")
+
         st.caption(f"**Last Updated:** {datetime.now().strftime('%d %b %Y, %H:%M:%S')}")
     else:
         single_season = pd.DataFrame()
@@ -4320,14 +4393,23 @@ try:
             else:
                 st.warning("Could not load cross-league comparison data. Please try again later.")
 
-except requests.exceptions.HTTPError:
-    if season is not None:
-        season_label = format_season_label(season, league_cfg["season_type"])
-        st.error(f"Could not fetch data for the {selected_league} {season_label} season. The page may not be available.")
+except requests.exceptions.HTTPError as e:
+    _status = e.response.status_code if e.response is not None else "unknown"
+    if _status == 404:
+        if season is not None:
+            season_label = format_season_label(season, league_cfg["season_type"])
+            st.warning(
+                f"The Wikipedia page for the {selected_league} {season_label} season could not be found. "
+                f"Try selecting a different season, or this season may not yet have a Wikipedia article."
+            )
+        else:
+            st.warning(f"Could not find data for the {selected_league}. Try another competition.")
+    elif _status in (429, 503):
+        st.warning("The data source is temporarily unavailable (rate limited or overloaded). Please try again in a moment.")
     else:
-        st.error(f"Could not fetch data for the {selected_league}.")
+        st.warning(f"Could not fetch data (HTTP {_status}). The page may have moved or be temporarily unavailable.")
 except Exception as e:
-    st.error(f"An error occurred: {e}")
+    st.warning(f"Something went wrong loading this league's data. Please try refreshing or selecting a different season. (Detail: {e})")
 
 st.divider()
 st.markdown(
