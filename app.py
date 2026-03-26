@@ -263,7 +263,7 @@ def init_db():
         CREATE TABLE IF NOT EXISTS reviews (
             id SERIAL PRIMARY KEY,
             username VARCHAR(100) NOT NULL,
-            rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5),
+            rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 100),
             comment TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
@@ -313,7 +313,7 @@ def get_good_reviews():
     conn = get_db_conn()
     cur = conn.cursor()
     cur.execute(
-        "SELECT username, rating, comment, created_at FROM reviews WHERE rating >= 4 ORDER BY created_at DESC LIMIT 20"
+        "SELECT username, rating, comment, created_at FROM reviews WHERE rating >= 70 ORDER BY created_at DESC LIMIT 20"
     )
     rows = cur.fetchall()
     cur.close()
@@ -587,9 +587,11 @@ else:
 
 
 def render_star_display(rating):
-    filled = int(rating)
+    # Convert 1-100 scale to 5-star display
+    filled = round(rating / 20)
+    filled = max(0, min(5, filled))
     empty = 5 - filled
-    return '<span style="color: #FFD700; font-size: 1.3em;">' + ("&#9733;" * filled) + ("&#9734;" * empty) + "</span>"
+    return '<span style="color: #FFD700; font-size: 1.3em;">' + ("&#9733;" * filled) + ("&#9734;" * empty) + f'</span> <span style="color:#aaa;font-size:0.85em;">{rating}/100</span>'
 
 
 if nav_page == "Analytics":
@@ -660,22 +662,25 @@ if nav_page == "Analytics":
         st.metric("Total Reviews", analytics["total_reviews"])
         if analytics["avg_rating"]:
             avg_r = float(analytics["avg_rating"])
-            st.markdown(f"**Average Rating:** {avg_r:.1f} / 5.0 {render_star_display(round(avg_r))}", unsafe_allow_html=True)
+            st.markdown(f"**Average Rating:** {avg_r:.1f} / 100 {render_star_display(round(avg_r))}", unsafe_allow_html=True)
 
     with col_rev2:
         st.subheader("Rating Distribution")
         if analytics["rating_dist"]:
             rd_df = pd.DataFrame(analytics["rating_dist"], columns=["Rating", "Count"])
-            rd_df["Rating"] = rd_df["Rating"].apply(lambda r: f"{r} Star{'s' if r > 1 else ''}")
-            rating_color_map = {
-                "5 Stars": "#2ecc71",
-                "4 Stars": "#3498db",
-                "3 Stars": "#f1c40f",
-                "2 Stars": "#e74c3c",
-                "1 Star": "#c0392b",
-            }
-            fig_rd = px.pie(rd_df, values="Count", names="Rating", template="plotly_dark",
-                           color_discrete_map=rating_color_map)
+            rd_df["Bucket"] = rd_df["Rating"].apply(lambda r:
+                "90-100 (Excellent)" if r >= 90 else
+                "70-89 (Good)" if r >= 70 else
+                "50-69 (Average)" if r >= 50 else
+                "30-49 (Below Avg)" if r >= 30 else
+                "1-29 (Poor)"
+            )
+            bucket_df = rd_df.groupby("Bucket")["Count"].sum().reset_index()
+            bucket_order = ["90-100 (Excellent)", "70-89 (Good)", "50-69 (Average)", "30-49 (Below Avg)", "1-29 (Poor)"]
+            bucket_colors = {"90-100 (Excellent)": "#2ecc71", "70-89 (Good)": "#3498db", "50-69 (Average)": "#f1c40f", "30-49 (Below Avg)": "#e74c3c", "1-29 (Poor)": "#c0392b"}
+            fig_rd = px.pie(bucket_df, values="Count", names="Bucket", template="plotly_dark",
+                           color="Bucket", color_discrete_map=bucket_colors,
+                           category_orders={"Bucket": bucket_order})
             fig_rd.update_layout(height=300, showlegend=True,
                                 legend=dict(orientation="v", yanchor="middle", y=0.5, xanchor="left", x=1.02))
             fig_rd.update_traces(textposition="inside", textinfo="percent+label")
@@ -787,11 +792,12 @@ if nav_page == "Feedback":
         with fb_cols[0]:
             fb_username = st.text_input("Your name", max_chars=100, placeholder="e.g. FootballFan99")
         with fb_cols[1]:
-            fb_rating = st.select_slider(
-                "Rating",
-                options=[1, 2, 3, 4, 5],
-                value=5,
-                format_func=lambda x: "\u2605" * x + "\u2606" * (5 - x),
+            fb_rating = st.slider(
+                "Rating (out of 100)",
+                min_value=1, max_value=100,
+                value=80,
+                step=1,
+                help="Drag to select your score out of 100",
             )
         with fb_cols[2]:
             fb_comment = st.text_area("Comment (optional)", max_chars=500, placeholder="What did you like? Any suggestions?", height=80)
@@ -815,44 +821,48 @@ if nav_page == "Feedback":
     rev_col1, rev_col2, rev_col3 = st.columns(3)
     total_count = len(all_reviews)
     avg_rating_fb = sum(r[1] for r in all_reviews) / total_count if total_count > 0 else 0
-    five_star_count = sum(1 for r in all_reviews if r[1] == 5)
+    top_score_count = sum(1 for r in all_reviews if r[1] >= 90)
     with rev_col1:
         st.metric("Total Reviews", total_count)
     with rev_col2:
         if total_count > 0:
-            st.metric("Average Rating", f"{avg_rating_fb:.1f} / 5.0")
+            st.metric("Average Score", f"{avg_rating_fb:.1f} / 100")
         else:
-            st.metric("Average Rating", "N/A")
+            st.metric("Average Score", "N/A")
     with rev_col3:
-        st.metric("5-Star Reviews", five_star_count)
+        st.metric("90+ Scores", top_score_count)
 
     if total_count > 0:
         st.divider()
-        rating_counts = {}
-        for r in all_reviews:
-            rating_counts[r[1]] = rating_counts.get(r[1], 0) + 1
         rc_col1, rc_col2 = st.columns(2)
         with rc_col1:
-            st.subheader("Rating Distribution")
+            st.subheader("Score Distribution")
+            buckets = [
+                ("90-100 (Excellent)", 90, 100, "#2ecc71"),
+                ("70-89 (Good)", 70, 89, "#3498db"),
+                ("50-69 (Average)", 50, 69, "#f1c40f"),
+                ("30-49 (Below Avg)", 30, 49, "#e74c3c"),
+                ("1-29 (Poor)", 1, 29, "#c0392b"),
+            ]
             rd_data = []
-            for star in range(5, 0, -1):
-                count = rating_counts.get(star, 0)
-                pct = (count / total_count * 100) if total_count > 0 else 0
-                rd_data.append({"Rating": f"{star} Star{'s' if star > 1 else ''}", "Count": count, "Percentage": pct})
+            for label, lo, hi, _ in buckets:
+                count = sum(1 for r in all_reviews if lo <= r[1] <= hi)
+                rd_data.append({"Score Range": label, "Count": count})
             rd_df = pd.DataFrame(rd_data)
-            rating_colors = {"5 Stars": "#2ecc71", "4 Stars": "#3498db", "3 Stars": "#f1c40f", "2 Stars": "#e74c3c", "1 Star": "#c0392b"}
-            fig_rd = px.bar(rd_df, x="Count", y="Rating", orientation="h", template="plotly_dark",
-                           color="Rating", color_discrete_map=rating_colors)
-            fig_rd.update_layout(height=250, showlegend=False, yaxis=dict(categoryorder="array", categoryarray=[f"{s} Star{'s' if s > 1 else ''}" for s in range(5, 0, -1)]))
+            bucket_colors = {b[0]: b[3] for b in buckets}
+            fig_rd = px.bar(rd_df, x="Count", y="Score Range", orientation="h", template="plotly_dark",
+                           color="Score Range", color_discrete_map=bucket_colors)
+            fig_rd.update_layout(height=250, showlegend=False,
+                                yaxis=dict(categoryorder="array", categoryarray=[b[0] for b in buckets]))
             st.plotly_chart(fig_rd, use_container_width=True)
 
         with rc_col2:
             st.subheader("Sentiment Breakdown")
-            positive = sum(1 for r in all_reviews if r[1] >= 4)
-            neutral = sum(1 for r in all_reviews if r[1] == 3)
-            negative = sum(1 for r in all_reviews if r[1] <= 2)
-            sent_df = pd.DataFrame({"Sentiment": ["Positive (4-5)", "Neutral (3)", "Negative (1-2)"], "Count": [positive, neutral, negative]})
-            sent_colors = {"Positive (4-5)": "#2ecc71", "Neutral (3)": "#f1c40f", "Negative (1-2)": "#e74c3c"}
+            positive = sum(1 for r in all_reviews if r[1] >= 70)
+            neutral = sum(1 for r in all_reviews if 40 <= r[1] < 70)
+            negative = sum(1 for r in all_reviews if r[1] < 40)
+            sent_df = pd.DataFrame({"Sentiment": ["Positive (70-100)", "Neutral (40-69)", "Negative (1-39)"], "Count": [positive, neutral, negative]})
+            sent_colors = {"Positive (70-100)": "#2ecc71", "Neutral (40-69)": "#f1c40f", "Negative (1-39)": "#e74c3c"}
             fig_sent = px.pie(sent_df, values="Count", names="Sentiment", template="plotly_dark",
                              color="Sentiment", color_discrete_map=sent_colors)
             fig_sent.update_layout(height=250)
@@ -864,12 +874,13 @@ if nav_page == "Feedback":
 
         filter_col1, filter_col2 = st.columns([1, 3])
         with filter_col1:
-            filter_rating = st.selectbox("Filter by rating", ["All", "5 Stars", "4 Stars", "3 Stars", "2 Stars", "1 Star"])
+            filter_rating = st.selectbox("Filter by score", ["All", "90-100 (Excellent)", "70-89 (Good)", "50-69 (Average)", "30-49 (Below Avg)", "1-29 (Poor)"])
 
         filtered_reviews = all_reviews
         if filter_rating != "All":
-            filter_val = int(filter_rating[0])
-            filtered_reviews = [r for r in all_reviews if r[1] == filter_val]
+            _ranges = {"90-100 (Excellent)": (90, 100), "70-89 (Good)": (70, 89), "50-69 (Average)": (50, 69), "30-49 (Below Avg)": (30, 49), "1-29 (Poor)": (1, 29)}
+            lo, hi = _ranges[filter_rating]
+            filtered_reviews = [r for r in all_reviews if lo <= r[1] <= hi]
 
         if filtered_reviews:
             st.caption(f"Showing {len(filtered_reviews)} review{'s' if len(filtered_reviews) != 1 else ''}")
