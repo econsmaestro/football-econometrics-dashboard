@@ -1233,34 +1233,77 @@ if nav_page == "AI Scout":
         st.session_state.scout_image_data = None
 
         with st.chat_message("assistant"):
-            # Step 1: fetch live web context
-            with st.spinner("Searching for recent updates…"):
+            # Step 1: fetch live web context — always search the user query,
+            # then add a targeted standings search if any major league is mentioned
+            with st.spinner("Searching for latest data…"):
                 web_snippets = _search_football_context(user_input)
 
-            # Step 2: build dynamic system prompt (date + web context)
-            _today_str = datetime.utcnow().strftime("%B %d, %Y")
+                _now = datetime.utcnow()
+                _yr  = _now.year
+                # Current split-season label (e.g. "2025-26") and calendar label
+                _split_season = f"{_yr - 1}-{str(_yr)[2:]}" if _now.month < 7 else f"{_yr}-{str(_yr + 1)[2:]}"
+                _cal_season   = str(_yr)
+
+                # Detect if the question touches league standings / positions
+                _standing_keywords = [
+                    "table", "standing", "position", "relegat", "top four", "top 4",
+                    "champion", "title", "europe", "european", "ucl", "top of",
+                    "bottom of", "how are", "where are", "season", "league",
+                    "premier league", "la liga", "bundesliga", "serie a", "ligue 1",
+                ]
+                _q_lower = user_input.lower()
+                _needs_standings = any(kw in _q_lower for kw in _standing_keywords)
+
+                if _needs_standings:
+                    # Work out which league the user is asking about
+                    _league_map = {
+                        "premier league": f"Premier League table {_split_season}",
+                        "la liga":        f"La Liga table {_split_season}",
+                        "bundesliga":     f"Bundesliga table {_split_season}",
+                        "serie a":        f"Serie A table {_split_season}",
+                        "ligue 1":        f"Ligue 1 table {_split_season}",
+                        "mls":            f"MLS standings {_cal_season}",
+                        "champions league": f"Champions League {_split_season} standings",
+                    }
+                    _bonus_query = None
+                    for _key, _q in _league_map.items():
+                        if _key in _q_lower:
+                            _bonus_query = _q
+                            break
+                    if not _bonus_query:
+                        # Generic fallback standings search
+                        _bonus_query = f"Premier League table {_split_season} current standings"
+                    extra = _search_football_context(_bonus_query, max_snippets=6)
+                    web_snippets = web_snippets + extra  # combine both result sets
+
+            # Step 2: build dynamic system prompt
+            _today_str = _now.strftime("%B %d, %Y")
             dynamic_system = (
                 "You are an expert football (soccer) analyst and econometrics tutor "
                 "embedded inside a Football Econometrics Dashboard covering 30 competitions worldwide.\n"
-                f"Today's date is {_today_str}.\n"
-                "IMPORTANT: Your training data has a knowledge cutoff and may be out of date. "
-                "Recent web search results are provided below — you MUST treat these as the ground truth "
-                "for any facts about current seasons, player transfers, managerial appointments, "
-                "league standings, or match results. If the web results contradict your training memory, "
-                "always defer to the web results. If you are uncertain about a recent fact and the web "
-                "results don't confirm it, say so clearly rather than confidently stating outdated information.\n"
+                f"Today's date is {_today_str}. The current European club season is {_split_season}.\n\n"
+                "══ CRITICAL DATA RULES — READ BEFORE EVERY REPLY ══\n"
+                "1. NEVER state league standings, positions, relegation battles, top-four races, "
+                "title leaders, or recent match results from your training memory. Your training data "
+                "is YEARS out of date for these facts. A team you remember as a mid-table side may now "
+                "be champions, or may have been relegated and returned since.\n"
+                "2. ONLY use the web search results below for any facts about: current standings, "
+                "who is in relegation danger, who is fighting for Europe, recent transfers, "
+                "managerial changes, injuries, or match outcomes.\n"
+                "3. If the web results do not contain a specific fact, say 'I don't have live data "
+                "on that right now — please check BBC Sport or the official league site for the "
+                f"latest {_split_season} standings.'\n"
+                "4. Do NOT blend training-data guesses with web facts. If uncertain, admit it.\n"
+                "══════════════════════════════════════════════════════\n\n"
                 "Explain concepts in plain, conversational English. Be precise when the user wants detail. "
-                "When an image is attached, describe what you see and provide relevant football insights.\n"
-                "SOURCE CITATION RULE: At the end of every reply that uses web search results, you MUST include "
-                "a 'Sources' section listing every source you drew on. Use this exact format:\n"
-                "**Sources**\n"
-                "1. [Title or site name](URL)\n"
-                "2. [Title or site name](URL)\n"
-                "List ALL sources that provided information used in your answer, not just one or two. "
-                "If no web results were available, omit the Sources section entirely."
+                "When an image is attached, describe what you see and provide relevant football insights.\n\n"
+                "SOURCE CITATION RULE: At the end of every reply that uses web search results, include "
+                "a '**Sources**' section listing every source used. Format:\n"
+                "**Sources**\n1. [Title](URL)\n2. [Title](URL)\n"
+                "List ALL contributing sources. Omit the section only if zero web results were available."
             )
             if web_snippets:
-                dynamic_system += "\n\n=== RECENT WEB SEARCH RESULTS (treat as ground truth) ===\n"
+                dynamic_system += "\n\n=== LIVE WEB SEARCH RESULTS — USE THESE, NOT YOUR TRAINING MEMORY ===\n"
                 for i, s in enumerate(web_snippets, 1):
                     title   = s.get("title", "")
                     snippet = s.get("snippet", "")
@@ -1268,10 +1311,16 @@ if nav_page == "AI Scout":
                     label   = f"[{title}]" if title else ""
                     src     = f" ({url})" if url else ""
                     dynamic_system += f"{i}. {label}{src}: {snippet}\n"
-                dynamic_system += "=== END OF WEB RESULTS ===\n"
                 dynamic_system += (
-                    "You used the above web results. At the end of your reply you MUST list every source "
-                    "that contributed to your answer under a '**Sources**' heading with numbered clickable links."
+                    "=== END OF LIVE RESULTS ===\n"
+                    "Base your answer ONLY on the above results for any factual claims. "
+                    "Cite every source you used under '**Sources**' at the end."
+                )
+            else:
+                dynamic_system += (
+                    "\n\nNo web results were retrieved for this query. "
+                    "Do NOT invent standings, positions, or recent results from memory. "
+                    "Tell the user you don't have live data and suggest they check BBC Sport or the official league site."
                 )
 
             api_messages = [{"role": "system", "content": dynamic_system}]
