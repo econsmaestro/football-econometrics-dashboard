@@ -1019,6 +1019,30 @@ if nav_page == "AI Scout":
             "Please try your question again — if the problem persists, come back in a few minutes."
         )
 
+    def _search_football_context(query, max_snippets=6):
+        """Search the web for recent football context to ground the AI's answer."""
+        try:
+            from urllib.parse import quote as _quote
+            search_q = _quote(f"{query} football 2025 2026 latest")
+            url = f"https://html.duckduckgo.com/html/?q={search_q}"
+            hdrs = {
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+                ),
+                "Accept-Language": "en-GB,en;q=0.9",
+            }
+            resp = requests.get(url, headers=hdrs, timeout=6)
+            soup_s = BeautifulSoup(resp.text, "html.parser")
+            snippets = []
+            for el in soup_s.select(".result__snippet")[:max_snippets]:
+                text = el.get_text(separator=" ", strip=True)
+                if text:
+                    snippets.append(text)
+            return snippets
+        except Exception:
+            return []
+
     # ── Usage check ──────────────────────────────────────────────────────────
     _week_key = _current_week_key()
     _stored_week, _used_count = _get_scout_usage(_uid)
@@ -1117,12 +1141,38 @@ if nav_page == "AI Scout":
 
             st.session_state.ai_scout_messages.append({"role": "user", "content": user_input})
 
-            api_messages = [{"role": "system", "content": _SYSTEM_PROMPT}]
-            for prev in st.session_state.ai_scout_messages[:-1]:
-                api_messages.append({"role": prev["role"], "content": prev["content"]})
-            api_messages.append({"role": "user", "content": user_content})
-
             with st.chat_message("assistant"):
+                # Step 1: fetch live web context
+                with st.spinner("Searching for recent updates…"):
+                    web_snippets = _search_football_context(user_input)
+
+                # Step 2: build dynamic system prompt (date + web context)
+                _today_str = datetime.utcnow().strftime("%B %d, %Y")
+                dynamic_system = (
+                    "You are an expert football (soccer) analyst and econometrics tutor "
+                    "embedded inside a Football Econometrics Dashboard covering 30 competitions worldwide.\n"
+                    f"Today's date is {_today_str}.\n"
+                    "Your training data has a knowledge cutoff, so you may not know about very recent "
+                    "events from your own memory. However, recent web search results have been retrieved "
+                    "and are provided below — always prioritise this context when answering about "
+                    "current seasons, recent transfers, managerial appointments, or results.\n"
+                    "Explain football statistics and econometric concepts in plain, conversational English. "
+                    "Avoid unnecessary jargon but be precise when the user asks for technical detail. "
+                    "When the user uploads an image of a chart or table from the app, describe what you "
+                    "see and provide relevant football-analytics insights."
+                )
+                if web_snippets:
+                    dynamic_system += "\n\n--- Recent web search results ---\n"
+                    for i, s in enumerate(web_snippets, 1):
+                        dynamic_system += f"{i}. {s}\n"
+                    dynamic_system += "--- End of web results ---"
+
+                api_messages = [{"role": "system", "content": dynamic_system}]
+                for prev in st.session_state.ai_scout_messages[:-1]:
+                    api_messages.append({"role": prev["role"], "content": prev["content"]})
+                api_messages.append({"role": "user", "content": user_content})
+
+                # Step 3: call the AI
                 with st.spinner("Thinking…"):
                     try:
                         response = _client.chat.completions.create(
