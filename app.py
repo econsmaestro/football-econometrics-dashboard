@@ -1084,15 +1084,18 @@ def fetch_season_data(season_val, wiki_pattern, wiki_name, season_type):
 @st.cache_data(ttl=604800, show_spinner=False)
 def load_multi_season(start_year, end_year, wiki_pattern, wiki_name, season_type):
     frames = []
+    failed_years = []
     for yr in range(start_year, end_year + 1):
         try:
             df = fetch_season_data(yr, wiki_pattern, wiki_name, season_type)
             frames.append(df)
-        except Exception:
-            pass
+        except Exception as _ye:
+            err = str(_ye).lower()
+            if "404" not in err:
+                failed_years.append(yr)
     if frames:
-        return pd.concat(frames, ignore_index=True)
-    return pd.DataFrame()
+        return pd.concat(frames, ignore_index=True), failed_years
+    return pd.DataFrame(), failed_years
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -1870,8 +1873,9 @@ try:
             except Exception as _e:
                 _single_season_error = str(_e)
                 single_season = pd.DataFrame()
+            _multi_season_skipped = []
             try:
-                multi_season_raw = load_multi_season(season_range[0], season_range[1], league_cfg["wiki_pattern"], league_cfg["wiki_name"], league_cfg["season_type"])
+                multi_season_raw, _multi_season_skipped = load_multi_season(season_range[0], season_range[1], league_cfg["wiki_pattern"], league_cfg["wiki_name"], league_cfg["season_type"])
                 multi_season = rebase_to_standard_season(multi_season_raw, gps)
             except Exception as _e:
                 _multi_season_error = str(_e)
@@ -1920,6 +1924,17 @@ try:
             if not _using_fallback:
                 friendly = _friendly_scrape_error(_multi_season_error)
                 st.warning(f"**Historical data unavailable.** {friendly}  \nSome analysis tabs may show limited results.")
+        elif _multi_season_skipped and not multi_season.empty:
+            def _season_label_for_yr(yr):
+                return format_season_label(yr, league_cfg["season_type"])
+            skipped_labels = [_season_label_for_yr(y) for y in _multi_season_skipped]
+            total_requested = season_range[1] - season_range[0] + 1
+            loaded_count = total_requested - len(_multi_season_skipped)
+            st.info(
+                f"Showing data for **{loaded_count} of {total_requested} seasons**. "
+                f"The following seasons could not be loaded and are excluded from analysis: "
+                f"{', '.join(skipped_labels)}."
+            )
 
         st.caption(f"**Last Updated:** {datetime.now().strftime('%d %b %Y, %H:%M:%S')}")
     else:
