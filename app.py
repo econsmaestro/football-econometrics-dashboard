@@ -1020,12 +1020,12 @@ if nav_page == "AI Scout":
         )
 
     def _search_football_context(query, max_snippets=8):
-        """Search the web for recent football context to ground the AI's answer."""
+        """Search the web for recent football context. Returns list of dicts with title/snippet/url."""
         try:
-            from urllib.parse import quote as _quote
+            from urllib.parse import quote as _quote, unquote as _unquote
             yr = datetime.utcnow().year
             search_q = _quote(f"{query} {yr}")
-            url = f"https://html.duckduckgo.com/html/?q={search_q}"
+            search_url = f"https://html.duckduckgo.com/html/?q={search_q}"
             hdrs = {
                 "User-Agent": (
                     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -1033,17 +1033,36 @@ if nav_page == "AI Scout":
                 ),
                 "Accept-Language": "en-GB,en;q=0.9",
             }
-            resp = requests.get(url, headers=hdrs, timeout=8)
+            resp = requests.get(search_url, headers=hdrs, timeout=8)
             soup_s = BeautifulSoup(resp.text, "html.parser")
             results = []
             for result in soup_s.select(".result")[:max_snippets]:
                 title_el = result.select_one(".result__title")
                 snip_el  = result.select_one(".result__snippet")
+                url_el   = result.select_one(".result__url")
+                # Try to get the real URL from the title link
+                link_el  = result.select_one(".result__title a")
+                href = ""
+                if link_el and link_el.get("href"):
+                    raw = link_el["href"]
+                    # DuckDuckGo wraps urls as /l/?uddg=<encoded_url>
+                    if "uddg=" in raw:
+                        try:
+                            href = _unquote(raw.split("uddg=")[1].split("&")[0])
+                        except Exception:
+                            href = ""
+                    elif raw.startswith("http"):
+                        href = raw
+                displayed_url = url_el.get_text(strip=True) if url_el else href
                 title = title_el.get_text(separator=" ", strip=True) if title_el else ""
                 snip  = snip_el.get_text(separator=" ", strip=True)  if snip_el  else ""
                 if snip:
-                    combined = f"{title}: {snip}" if title else snip
-                    results.append(combined)
+                    results.append({
+                        "title": title,
+                        "snippet": snip,
+                        "url": href or displayed_url,
+                        "source": displayed_url or href,
+                    })
             return results
         except Exception:
             return []
@@ -1205,13 +1224,29 @@ if nav_page == "AI Scout":
                 "always defer to the web results. If you are uncertain about a recent fact and the web "
                 "results don't confirm it, say so clearly rather than confidently stating outdated information.\n"
                 "Explain concepts in plain, conversational English. Be precise when the user wants detail. "
-                "When an image is attached, describe what you see and provide relevant football insights."
+                "When an image is attached, describe what you see and provide relevant football insights.\n"
+                "SOURCE CITATION RULE: At the end of every reply that uses web search results, you MUST include "
+                "a 'Sources' section listing every source you drew on. Use this exact format:\n"
+                "**Sources**\n"
+                "1. [Title or site name](URL)\n"
+                "2. [Title or site name](URL)\n"
+                "List ALL sources that provided information used in your answer, not just one or two. "
+                "If no web results were available, omit the Sources section entirely."
             )
             if web_snippets:
                 dynamic_system += "\n\n=== RECENT WEB SEARCH RESULTS (treat as ground truth) ===\n"
                 for i, s in enumerate(web_snippets, 1):
-                    dynamic_system += f"{i}. {s}\n"
-                dynamic_system += "=== END OF WEB RESULTS ==="
+                    title   = s.get("title", "")
+                    snippet = s.get("snippet", "")
+                    url     = s.get("url", "")
+                    label   = f"[{title}]" if title else ""
+                    src     = f" ({url})" if url else ""
+                    dynamic_system += f"{i}. {label}{src}: {snippet}\n"
+                dynamic_system += "=== END OF WEB RESULTS ===\n"
+                dynamic_system += (
+                    "You used the above web results. At the end of your reply you MUST list every source "
+                    "that contributed to your answer under a '**Sources**' heading with numbered clickable links."
+                )
 
             api_messages = [{"role": "system", "content": dynamic_system}]
             for prev in st.session_state.ai_scout_messages[:-1]:
