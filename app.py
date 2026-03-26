@@ -1019,11 +1019,12 @@ if nav_page == "AI Scout":
             "Please try your question again — if the problem persists, come back in a few minutes."
         )
 
-    def _search_football_context(query, max_snippets=6):
+    def _search_football_context(query, max_snippets=8):
         """Search the web for recent football context to ground the AI's answer."""
         try:
             from urllib.parse import quote as _quote
-            search_q = _quote(f"{query} football 2025 2026 latest")
+            yr = datetime.utcnow().year
+            search_q = _quote(f"{query} {yr}")
             url = f"https://html.duckduckgo.com/html/?q={search_q}"
             hdrs = {
                 "User-Agent": (
@@ -1032,14 +1033,18 @@ if nav_page == "AI Scout":
                 ),
                 "Accept-Language": "en-GB,en;q=0.9",
             }
-            resp = requests.get(url, headers=hdrs, timeout=6)
+            resp = requests.get(url, headers=hdrs, timeout=8)
             soup_s = BeautifulSoup(resp.text, "html.parser")
-            snippets = []
-            for el in soup_s.select(".result__snippet")[:max_snippets]:
-                text = el.get_text(separator=" ", strip=True)
-                if text:
-                    snippets.append(text)
-            return snippets
+            results = []
+            for result in soup_s.select(".result")[:max_snippets]:
+                title_el = result.select_one(".result__title")
+                snip_el  = result.select_one(".result__snippet")
+                title = title_el.get_text(separator=" ", strip=True) if title_el else ""
+                snip  = snip_el.get_text(separator=" ", strip=True)  if snip_el  else ""
+                if snip:
+                    combined = f"{title}: {snip}" if title else snip
+                    results.append(combined)
+            return results
         except Exception:
             return []
 
@@ -1061,25 +1066,41 @@ if nav_page == "AI Scout":
 
     _client = openai.OpenAI(base_url=_BASE_URL, api_key=_API_KEY)
 
-    _SYSTEM_PROMPT = (
-        "You are an expert football (soccer) analyst and econometrics tutor embedded inside a "
-        "Football Econometrics Dashboard that covers 30 competitions worldwide. "
-        "You can interpret league tables, regression outputs (OLS/WLS), correlation matrices, "
-        "points predictors, penalty statistics, and team insights shown in the app. "
-        "Explain football statistics and econometric concepts in plain, conversational English — "
-        "avoid unnecessary jargon, but be precise when the user asks for technical detail. "
-        "When the user uploads an image of a chart or table from the app, describe what you see "
-        "and provide relevant football-analytics insights."
-    )
-
     if "ai_scout_messages" not in st.session_state:
         st.session_state.ai_scout_messages = []
+    if "scout_image_data" not in st.session_state:
+        st.session_state.scout_image_data = None  # (bytes, mime) tuple or None
+
+    # ── CSS: compact file uploader (paperclip style) ─────────────────────────
+    st.markdown("""
+    <style>
+    /* Hide the big drop-zone; keep only the Browse button */
+    [data-testid="stFileUploaderDropzone"] { display: none !important; }
+    div[data-testid="stFileUploader"] > label { display: none !important; }
+    div[data-testid="stFileUploader"] section {
+        padding: 0 !important; min-height: 0 !important;
+        border: none !important; background: transparent !important;
+    }
+    /* Fixed scroll-to-top sits above the sticky chat input */
+    </style>
+    """, unsafe_allow_html=True)
+
+    # ── Scroll-to-top fixed button ────────────────────────────────────────────
+    st.markdown("""
+    <div style="position:fixed;bottom:90px;right:18px;z-index:9999;">
+      <button onclick="document.querySelector('.main').scrollTo({top:0,behavior:'smooth'})"
+              title="Scroll to top"
+              style="background:#1565C0;color:white;border:none;border-radius:50%;
+                     width:36px;height:36px;font-size:15px;cursor:pointer;
+                     box-shadow:0 2px 8px rgba(0,0,0,0.4);">&#8679;</button>
+    </div>
+    """, unsafe_allow_html=True)
 
     # ── Page header ──────────────────────────────────────────────────────────
     st.title("AI Football Scout")
     st.caption(
         "Ask anything about football stats, tactics, or econometrics — "
-        "or upload a screenshot of a league table / chart and ask for an explanation."
+        "or use the 📎 clip to attach a screenshot for the AI to analyse."
     )
 
     if _remaining > 0:
@@ -1093,100 +1114,125 @@ if nav_page == "AI Scout":
             "Your allowance resets every **Sunday at 23:59 GMT** — come back then!"
         )
 
-    col_chat, col_upload = st.columns([3, 1])
-
-    with col_upload:
-        st.subheader("Upload a chart or table")
+    # ── Toolbar: paperclip attachment + clear ────────────────────────────────
+    clip_col, status_col, clear_col = st.columns([1, 7, 1])
+    with clip_col:
+        st.markdown("📎")
         uploaded_image = st.file_uploader(
-            "Optional: attach a screenshot",
-            type=["png", "jpg", "jpeg", "webp"],
-            key="scout_image",
-            help="Upload any chart or table from the dashboard for the AI to analyse.",
+            "", type=["png", "jpg", "jpeg", "webp"],
+            key="scout_image", label_visibility="collapsed",
+            help="Attach a screenshot of a chart or table from the dashboard",
         )
-        if uploaded_image:
-            st.image(uploaded_image, caption="Image ready to send", use_container_width=True)
+        # Persist image bytes in session so it survives rerun
+        if uploaded_image is not None:
+            uploaded_image.seek(0)
+            st.session_state.scout_image_data = (uploaded_image.read(), uploaded_image.type or "image/png")
+        elif st.session_state.scout_image_data and uploaded_image is None:
+            # File was removed by the user
+            st.session_state.scout_image_data = None
 
-        if st.button("Clear conversation", key="scout_clear"):
+    with status_col:
+        if st.session_state.scout_image_data:
+            st.caption("📎 Image attached — will be sent with your next message.")
+
+    with clear_col:
+        if st.button("🗑️", key="scout_clear", help="Clear conversation"):
             st.session_state.ai_scout_messages = []
+            st.session_state.scout_image_data = None
             st.rerun()
 
-    with col_chat:
-        for msg in st.session_state.ai_scout_messages:
-            with st.chat_message(msg["role"]):
-                st.markdown(msg["content"])
-
-        if _remaining > 0:
-            user_input = st.chat_input("Ask about stats, tactics, results, models…")
-        else:
-            user_input = None
-            st.chat_input("Weekly limit reached — resets Sunday 23:59 GMT", disabled=True)
-
-        if user_input:
-            with st.chat_message("user"):
-                st.markdown(user_input)
-                if uploaded_image:
-                    st.image(uploaded_image, width=260)
-
-            if uploaded_image:
-                uploaded_image.seek(0)
-                img_bytes = uploaded_image.read()
-                b64_img = base64.b64encode(img_bytes).decode("utf-8")
-                mime = uploaded_image.type or "image/png"
-                user_content = [
-                    {"type": "text", "text": user_input},
-                    {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64_img}"}},
-                ]
-            else:
-                user_content = user_input
-
-            st.session_state.ai_scout_messages.append({"role": "user", "content": user_input})
-
-            with st.chat_message("assistant"):
-                # Step 1: fetch live web context
-                with st.spinner("Searching for recent updates…"):
-                    web_snippets = _search_football_context(user_input)
-
-                # Step 2: build dynamic system prompt (date + web context)
-                _today_str = datetime.utcnow().strftime("%B %d, %Y")
-                dynamic_system = (
-                    "You are an expert football (soccer) analyst and econometrics tutor "
-                    "embedded inside a Football Econometrics Dashboard covering 30 competitions worldwide.\n"
-                    f"Today's date is {_today_str}.\n"
-                    "Your training data has a knowledge cutoff, so you may not know about very recent "
-                    "events from your own memory. However, recent web search results have been retrieved "
-                    "and are provided below — always prioritise this context when answering about "
-                    "current seasons, recent transfers, managerial appointments, or results.\n"
-                    "Explain football statistics and econometric concepts in plain, conversational English. "
-                    "Avoid unnecessary jargon but be precise when the user asks for technical detail. "
-                    "When the user uploads an image of a chart or table from the app, describe what you "
-                    "see and provide relevant football-analytics insights."
+    # ── Message history (full width) ─────────────────────────────────────────
+    for msg in st.session_state.ai_scout_messages:
+        with st.chat_message(msg["role"]):
+            if msg.get("image_b64"):
+                st.image(
+                    base64.b64decode(msg["image_b64"]),
+                    width=280,
+                    caption="Attached image",
                 )
-                if web_snippets:
-                    dynamic_system += "\n\n--- Recent web search results ---\n"
-                    for i, s in enumerate(web_snippets, 1):
-                        dynamic_system += f"{i}. {s}\n"
-                    dynamic_system += "--- End of web results ---"
+            st.markdown(msg["content"])
 
-                api_messages = [{"role": "system", "content": dynamic_system}]
-                for prev in st.session_state.ai_scout_messages[:-1]:
-                    api_messages.append({"role": prev["role"], "content": prev["content"]})
-                api_messages.append({"role": "user", "content": user_content})
+    # ── Chat input — main level so it sticks to the bottom ───────────────────
+    if _remaining > 0:
+        user_input = st.chat_input("Ask about stats, tactics, results, models…")
+    else:
+        user_input = None
+        st.chat_input("Weekly limit reached — resets Sunday 23:59 GMT", disabled=True)
 
-                # Step 3: call the AI
-                with st.spinner("Thinking…"):
-                    try:
-                        response = _client.chat.completions.create(
-                            model=_MODEL,
-                            messages=api_messages,
-                            max_completion_tokens=1024,
-                        )
-                        reply = response.choices[0].message.content
-                        _increment_scout_usage(_uid, _week_key)
-                    except Exception as exc:
-                        reply = _friendly_ai_error(exc)
-                st.markdown(reply)
+    if user_input:
+        img_data = st.session_state.scout_image_data  # (bytes, mime) or None
 
-            st.session_state.ai_scout_messages.append({"role": "assistant", "content": reply})
+        with st.chat_message("user"):
+            if img_data:
+                st.image(img_data[0], width=280, caption="Attached image")
+            st.markdown(user_input)
+
+        # Build API user content
+        if img_data:
+            b64_img = base64.b64encode(img_data[0]).decode("utf-8")
+            user_content = [
+                {"type": "text", "text": user_input},
+                {"type": "image_url", "image_url": {"url": f"data:{img_data[1]};base64,{b64_img}"}},
+            ]
+        else:
+            b64_img = None
+            user_content = user_input
+
+        # Store in history (include image b64 for display on rerun)
+        st.session_state.ai_scout_messages.append({
+            "role": "user",
+            "content": user_input,
+            "image_b64": b64_img,
+        })
+        # Clear attached image after sending
+        st.session_state.scout_image_data = None
+
+        with st.chat_message("assistant"):
+            # Step 1: fetch live web context
+            with st.spinner("Searching for recent updates…"):
+                web_snippets = _search_football_context(user_input)
+
+            # Step 2: build dynamic system prompt (date + web context)
+            _today_str = datetime.utcnow().strftime("%B %d, %Y")
+            dynamic_system = (
+                "You are an expert football (soccer) analyst and econometrics tutor "
+                "embedded inside a Football Econometrics Dashboard covering 30 competitions worldwide.\n"
+                f"Today's date is {_today_str}.\n"
+                "IMPORTANT: Your training data has a knowledge cutoff and may be out of date. "
+                "Recent web search results are provided below — you MUST treat these as the ground truth "
+                "for any facts about current seasons, player transfers, managerial appointments, "
+                "league standings, or match results. If the web results contradict your training memory, "
+                "always defer to the web results. If you are uncertain about a recent fact and the web "
+                "results don't confirm it, say so clearly rather than confidently stating outdated information.\n"
+                "Explain concepts in plain, conversational English. Be precise when the user wants detail. "
+                "When an image is attached, describe what you see and provide relevant football insights."
+            )
+            if web_snippets:
+                dynamic_system += "\n\n=== RECENT WEB SEARCH RESULTS (treat as ground truth) ===\n"
+                for i, s in enumerate(web_snippets, 1):
+                    dynamic_system += f"{i}. {s}\n"
+                dynamic_system += "=== END OF WEB RESULTS ==="
+
+            api_messages = [{"role": "system", "content": dynamic_system}]
+            for prev in st.session_state.ai_scout_messages[:-1]:
+                api_messages.append({"role": prev["role"], "content": prev["content"]})
+            api_messages.append({"role": "user", "content": user_content})
+
+            # Step 3: call the AI
+            with st.spinner("Thinking…"):
+                try:
+                    response = _client.chat.completions.create(
+                        model=_MODEL,
+                        messages=api_messages,
+                        max_completion_tokens=1024,
+                    )
+                    reply = response.choices[0].message.content
+                    _increment_scout_usage(_uid, _week_key)
+                except Exception as exc:
+                    reply = _friendly_ai_error(exc)
+            st.markdown(reply)
+
+        st.session_state.ai_scout_messages.append({"role": "assistant", "content": reply})
 
     st.stop()
 
