@@ -15,6 +15,7 @@ import os
 import uuid
 import time
 from datetime import datetime, timedelta
+from models import load_fallback_data
 
 st.set_page_config(page_title="Football Econometrics Dashboard", layout="wide")
 
@@ -1877,19 +1878,48 @@ try:
                 multi_season = pd.DataFrame()
         st.session_state["_data_loading"] = False
 
+        def _friendly_scrape_error(raw_err: str) -> str:
+            e = raw_err.lower()
+            if "404" in e:
+                return "Wikipedia does not yet have a page for this season. It may not have started or been published yet."
+            if "429" in e or "rate" in e:
+                return "Wikipedia is temporarily rate-limiting requests. Please wait a minute and try again."
+            if "502" in e or "503" in e or "504" in e:
+                return "Wikipedia is temporarily unavailable (server error). Please try again in a few minutes."
+            if "connection" in e or "timeout" in e or "timed out" in e or "network" in e:
+                return "Could not reach Wikipedia — please check your internet connection and try again."
+            if "no table" in e or "no match" in e or "no season" in e or "no data" in e or "valueerror" in e:
+                return "Wikipedia has changed the layout of this season's page and the table could not be read. Cached data is shown below."
+            return f"An unexpected error occurred while loading data from Wikipedia: {raw_err}"
+
+        _using_fallback = False
+
         if _single_season_error and single_season.empty and not multi_season.empty:
             most_recent = multi_season["Season_End"].max() if "Season_End" in multi_season.columns else None
             if most_recent is not None:
                 single_season = multi_season[multi_season["Season_End"] == most_recent].copy()
-            st.warning(
-                f"Could not fetch the selected season from Wikipedia — showing the most recent available season instead. "
-                f"The page may have been renamed or is temporarily unavailable. (Detail: {_single_season_error})"
-            )
+            friendly = _friendly_scrape_error(_single_season_error)
+            st.error(f"**Live data unavailable.** {friendly}  \nShowing the most recent successfully-loaded season instead.")
         elif _single_season_error and single_season.empty:
-            st.warning(f"Could not load current season data: {_single_season_error}")
+            friendly = _friendly_scrape_error(_single_season_error)
+            fallback_df = load_fallback_data(selected_league)
+            if not fallback_df.empty:
+                single_season = fallback_df.copy()
+                _using_fallback = True
+                st.error(
+                    f"**Live data unavailable.** {friendly}  \n"
+                    f"Showing **cached 2023-24 season data** for {selected_league} — results may not reflect the current season."
+                )
+            else:
+                st.error(
+                    f"**Live data unavailable.** {friendly}  \n"
+                    f"No cached fallback is available for this competition. Please try again later."
+                )
 
         if _multi_season_error and multi_season.empty:
-            st.warning("Could not load historical season data. Some analysis tabs may be limited.")
+            if not _using_fallback:
+                friendly = _friendly_scrape_error(_multi_season_error)
+                st.warning(f"**Historical data unavailable.** {friendly}  \nSome analysis tabs may show limited results.")
 
         st.caption(f"**Last Updated:** {datetime.now().strftime('%d %b %Y, %H:%M:%S')}")
     else:
