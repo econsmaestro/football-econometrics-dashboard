@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import pandas as pd
 import numpy as np
 import requests
@@ -1139,57 +1140,42 @@ if nav_page == "AI Scout":
     if "scout_upload_key" not in st.session_state:
         st.session_state.scout_upload_key = 0      # increment to reset uploader
 
-    # ── CSS + JS: styled chat input + working + button ────────────────────────
+    # ── CSS: style chat input + hide file uploader ───────────────────────────
     st.markdown("""
     <style>
-    /* ── Chat input: blue-bordered rounded box ── */
+    /* Chat input: blue border, rounded, dark background */
     [data-testid="stChatInput"] {
         border: 1.5px solid #1E88E5 !important;
         border-radius: 14px !important;
         background: #111827 !important;
-        position: relative !important;   /* so abs children anchor here */
-        padding-left: 42px !important;   /* room for + button */
+        position: relative !important;
+        padding-left: 44px !important;
     }
     [data-testid="stChatInput"] textarea {
         background: transparent !important;
         font-size: 1rem !important;
     }
-    /* Send button → blue square */
+    /* Send button: blue square on the right */
     [data-testid="stChatInputSubmitButton"] button {
         background: #1E88E5 !important;
         border-radius: 8px !important;
         color: white !important;
     }
-
-    /* ── File uploader: invisible but clickable ── */
+    /* File uploader: invisible 1×1px at bottom-left corner (stays in DOM for JS) */
     div[data-testid="stFileUploader"] {
         position: fixed !important;
-        bottom: 0 !important; left: -2px !important;
+        bottom: 2px !important; left: 2px !important;
         width: 1px !important; height: 1px !important;
         opacity: 0 !important;
         overflow: visible !important;
-        z-index: 1 !important;
+        z-index: 0 !important;
+        pointer-events: none !important;
     }
-    /* All children: keep pointer-events ON so JS .click() works */
-    div[data-testid="stFileUploader"] * {
+    div[data-testid="stFileUploader"] input[type="file"] {
         pointer-events: auto !important;
+        width: 1px !important; height: 1px !important;
     }
-
-    /* ── + button base style (JS will move it inside the chat box) ── */
-    #scout-plus-btn {
-        background: transparent;
-        border: none;
-        color: #9CA3AF;
-        font-size: 26px; font-weight: 300; line-height: 1;
-        width: 34px; height: 34px;
-        display: flex; align-items: center; justify-content: center;
-        cursor: pointer;
-        transition: color 0.15s;
-        flex-shrink: 0;
-    }
-    #scout-plus-btn:hover { color: #fff; }
-
-    /* ── Filename chip ── */
+    /* Filename chip */
     .scout-chip {
         display: inline-flex; align-items: center; gap: 8px;
         background: rgba(30,136,229,0.15);
@@ -1198,52 +1184,63 @@ if nav_page == "AI Scout":
         font-size: 0.83rem; color: #90CAF9; margin: 6px 0;
     }
     </style>
+    """, unsafe_allow_html=True)
 
-    <!-- + button — JS moves it inside the chat input and hooks it up -->
-    <button id="scout-plus-btn" title="Attach image">+</button>
-
+    # ── JS via components.html (scripts actually execute here, unlike st.markdown) ──
+    # Creates a + button inside the chat input; clicks the hidden file input.
+    components.html("""
     <script>
     (function () {
-      function attachPlus() {
-        var btn   = document.getElementById('scout-plus-btn');
-        var box   = document.querySelector('[data-testid="stChatInput"]');
-        if (!btn || !box) return false;
+      var P = window.parent.document;
 
-        /* Move + into the chat input box, absolutely pinned bottom-left */
-        box.style.position = 'relative';
-        btn.style.position  = 'absolute';
-        btn.style.bottom    = '8px';
-        btn.style.left      = '8px';
-        btn.style.zIndex    = '100';
-        box.appendChild(btn);
+      function setup() {
+        var chatBox = P.querySelector('[data-testid="stChatInput"]');
+        if (!chatBox) return false;
 
-        /* Wire up click → open file picker */
-        btn.addEventListener('click', function (e) {
-          e.preventDefault();
-          e.stopPropagation();
-          /* Try the real file input first */
-          var inp = document.querySelector('input[type="file"]');
+        /* Reuse or create the + button */
+        var btn = P.getElementById('scout-plus-btn');
+        if (!btn) {
+          btn = P.createElement('button');
+          btn.id = 'scout-plus-btn';
+          btn.title = 'Attach image';
+          btn.textContent = '+';
+          btn.style.cssText =
+            'position:absolute;bottom:10px;left:10px;z-index:200;' +
+            'background:transparent;border:none;color:#9CA3AF;' +
+            'font-size:26px;font-weight:300;line-height:1;' +
+            'width:32px;height:32px;cursor:pointer;' +
+            'display:flex;align-items:center;justify-content:center;';
+          btn.onmouseenter = function(){ btn.style.color='#fff'; };
+          btn.onmouseleave = function(){ btn.style.color='#9CA3AF'; };
+        }
+
+        /* Place inside chat box if not already there */
+        chatBox.style.position = 'relative';
+        if (!chatBox.contains(btn)) chatBox.appendChild(btn);
+
+        /* Click handler → trigger native file picker */
+        btn.onclick = function (e) {
+          e.preventDefault(); e.stopPropagation();
+          var inp = P.querySelector('input[type="file"]');
           if (inp) { inp.click(); return; }
-          /* Fallback: Streamlit's Browse button */
-          var fb = document.querySelector('[data-testid="stFileUploaderDropzone"] button');
+          var fb = P.querySelector('[data-testid="stFileUploaderDropzone"] button');
           if (fb) fb.click();
-        });
+        };
         return true;
       }
 
-      /* Streamlit re-renders asynchronously — retry until the box appears */
       function retry(n) {
-        if (attachPlus()) return;
-        if (n > 0) setTimeout(function () { retry(n - 1); }, 400);
+        if (setup()) return;
+        if (n > 0) setTimeout(function () { retry(n - 1); }, 500);
       }
-      retry(15);
+      retry(20);
 
-      /* Also re-attach after Streamlit reruns (MutationObserver) */
-      var obs = new MutationObserver(function () { attachPlus(); });
-      obs.observe(document.body, { childList: true, subtree: true });
+      /* Re-attach after every Streamlit DOM update */
+      new MutationObserver(function () { setup(); })
+        .observe(P.body, { childList: true, subtree: true });
     })();
     </script>
-    """, unsafe_allow_html=True)
+    """, height=0)
 
     # ── Page header ───────────────────────────────────────────────────────────
     st.title("AI Football Scout")
@@ -1390,23 +1387,52 @@ if nav_page == "AI Scout":
             # Step 2: build dynamic system prompt
             _today_str = _now.strftime("%B %d, %Y")
             dynamic_system = (
-                "You are an expert football (soccer) analyst and econometrics tutor "
+                "You are an expert football (soccer) analyst, econometrics tutor, and helpful guide "
                 "embedded inside a Football Econometrics Dashboard covering 30 competitions worldwide.\n"
                 f"Today's date is {_today_str}. The current European club season is {_split_season}.\n\n"
+
+                "══ SITE NAVIGATION — HELP USERS FIND THINGS ══\n"
+                "This dashboard has two sections in the sidebar:\n"
+                "• Competition selector — choose any of 30 competitions (Premier League, La Liga, Bundesliga, "
+                "Serie A, Ligue 1, Champions League, World Cup, MLS, J1 League, and many more). "
+                "Grouped into Europe, UEFA Competitions, International, Middle East, Asia, Americas.\n"
+                "• Season selector — pick a season year (split-season leagues show e.g. 2023-24; "
+                "calendar-season leagues show a single year).\n\n"
+                "The main tabs for league competitions are:\n"
+                "1. League Table — standings for the selected season with points, GF, GA, GD.\n"
+                "2. Statistical Analysis — OLS regression models, correlation matrix, what drives points.\n"
+                "3. Visualizations — scatter plots, box plots, bar charts; download CSV.\n"
+                "4. Predictions & Insights — points predictor, weekly overperformers/underperformers, "
+                "title odds, best attack/defence, relegation watch, cross-league comparison.\n"
+                "5. Penalty Analysis — shot placement zones, Bayesian conversion model, "
+                "game-theory strategic adjustment, goalkeeper dive advice.\n"
+                "6. Team Insights — KPI overview, historical trends, benchmarking vs. champions, "
+                "strengths/weaknesses, tactical recommendations, top scorers.\n"
+                "7. League Comparisons — goals per match, defensive strength, competitiveness across all leagues.\n\n"
+                "Sidebar pages (top of sidebar):\n"
+                "• Dashboard — the main analysis app described above.\n"
+                "• Feedback — submit a star rating and review; view all public reviews and stats.\n"
+                "• Web Analytics — total visitors, daily traffic, most-visited pages.\n"
+                "• AI Scout — THIS page; the chat interface you are running in now.\n\n"
+                "IMAGE UPLOADS ARE SUPPORTED: Users can tap the '+' button inside the chat input "
+                "box to attach a football-related image (screenshot, tactics board, match data, etc.). "
+                "When an image is attached, analyse it and provide relevant football insights. "
+                "NEVER tell the user that image or file uploads are not supported — they are.\n"
+                "═════════════════════════════════════════════════\n\n"
+
                 "══ CRITICAL DATA RULES — READ BEFORE EVERY REPLY ══\n"
                 "1. NEVER state league standings, positions, relegation battles, top-four races, "
                 "title leaders, or recent match results from your training memory. Your training data "
-                "is YEARS out of date for these facts. A team you remember as a mid-table side may now "
-                "be champions, or may have been relegated and returned since.\n"
+                "is YEARS out of date for these facts.\n"
                 "2. ONLY use the web search results below for any facts about: current standings, "
-                "who is in relegation danger, who is fighting for Europe, recent transfers, "
-                "managerial changes, injuries, or match outcomes.\n"
+                "relegation danger, European races, recent transfers, managerial changes, injuries, results.\n"
                 "3. If the web results do not contain a specific fact, say 'I don't have live data "
                 "on that right now — please check BBC Sport or the official league site for the "
                 f"latest {_split_season} standings.'\n"
                 "4. Do NOT blend training-data guesses with web facts. If uncertain, admit it.\n"
                 "══════════════════════════════════════════════════════\n\n"
-                "Explain concepts in plain, conversational English. Be precise when the user wants detail. "
+
+                "Explain concepts in plain, conversational English. Be helpful and encouraging. "
                 "When an image is attached, describe what you see and provide relevant football insights.\n\n"
                 "SOURCE CITATION RULE: At the end of every reply that uses web search results, include "
                 "a '**Sources**' section listing every source used. Format:\n"
