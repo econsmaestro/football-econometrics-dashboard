@@ -1139,76 +1139,110 @@ if nav_page == "AI Scout":
     if "scout_upload_key" not in st.session_state:
         st.session_state.scout_upload_key = 0      # increment to reset uploader
 
-    # ── CSS: style chat input like reference + hide file uploader widget ──────
+    # ── CSS + JS: styled chat input + working + button ────────────────────────
     st.markdown("""
     <style>
-    /* ── Chat input: blue-bordered rounded box like reference design ── */
+    /* ── Chat input: blue-bordered rounded box ── */
     [data-testid="stChatInput"] {
         border: 1.5px solid #1E88E5 !important;
         border-radius: 14px !important;
         background: #111827 !important;
-        padding-left: 44px !important;   /* room for the + button */
+        position: relative !important;   /* so abs children anchor here */
+        padding-left: 42px !important;   /* room for + button */
     }
     [data-testid="stChatInput"] textarea {
         background: transparent !important;
         font-size: 1rem !important;
     }
-    /* Send button: blue square bottom-right */
+    /* Send button → blue square */
     [data-testid="stChatInputSubmitButton"] button {
         background: #1E88E5 !important;
         border-radius: 8px !important;
         color: white !important;
     }
 
-    /* ── File uploader: shrink to invisible but keep input in DOM ── */
+    /* ── File uploader: invisible but clickable ── */
     div[data-testid="stFileUploader"] {
-        position: absolute !important;
+        position: fixed !important;
+        bottom: 0 !important; left: -2px !important;
         width: 1px !important; height: 1px !important;
-        overflow: hidden !important;
         opacity: 0 !important;
-        pointer-events: none !important;
-        top: -9999px !important;
+        overflow: visible !important;
+        z-index: 1 !important;
     }
-    /* The actual <input type=file> must remain accessible for .click() */
-    div[data-testid="stFileUploader"] input[type="file"] {
+    /* All children: keep pointer-events ON so JS .click() works */
+    div[data-testid="stFileUploader"] * {
         pointer-events: auto !important;
     }
 
-    /* ── Custom + button fixed bottom-left, inside chat bar area ── */
+    /* ── + button base style (JS will move it inside the chat box) ── */
     #scout-plus-btn {
-        position: fixed;
-        bottom: 17px; left: 16px;
-        z-index: 9999;
         background: transparent;
         border: none;
         color: #9CA3AF;
         font-size: 26px; font-weight: 300; line-height: 1;
-        width: 32px; height: 32px;
+        width: 34px; height: 34px;
         display: flex; align-items: center; justify-content: center;
         cursor: pointer;
         transition: color 0.15s;
+        flex-shrink: 0;
     }
     #scout-plus-btn:hover { color: #fff; }
 
     /* ── Filename chip ── */
     .scout-chip {
         display: inline-flex; align-items: center; gap: 8px;
-        background: rgba(30, 136, 229, 0.15);
-        border: 1px solid rgba(30, 136, 229, 0.4);
+        background: rgba(30,136,229,0.15);
+        border: 1px solid rgba(30,136,229,0.4);
         border-radius: 20px; padding: 5px 12px;
-        font-size: 0.83rem; color: #90CAF9;
-        margin: 6px 0;
+        font-size: 0.83rem; color: #90CAF9; margin: 6px 0;
     }
     </style>
 
-    <!-- + button: JS clicks the hidden Streamlit file input -->
-    <button id="scout-plus-btn" title="Attach image"
-      onclick="(function(){
-        var inp = document.querySelector('input[type=file]');
-        if (inp) { inp.click(); return; }
-        var btn = document.querySelector('[data-testid=stFileUploaderDropzone] button');
-        if (btn) btn.click();
-      })()">+</button>
+    <!-- + button — JS moves it inside the chat input and hooks it up -->
+    <button id="scout-plus-btn" title="Attach image">+</button>
+
+    <script>
+    (function () {
+      function attachPlus() {
+        var btn   = document.getElementById('scout-plus-btn');
+        var box   = document.querySelector('[data-testid="stChatInput"]');
+        if (!btn || !box) return false;
+
+        /* Move + into the chat input box, absolutely pinned bottom-left */
+        box.style.position = 'relative';
+        btn.style.position  = 'absolute';
+        btn.style.bottom    = '8px';
+        btn.style.left      = '8px';
+        btn.style.zIndex    = '100';
+        box.appendChild(btn);
+
+        /* Wire up click → open file picker */
+        btn.addEventListener('click', function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          /* Try the real file input first */
+          var inp = document.querySelector('input[type="file"]');
+          if (inp) { inp.click(); return; }
+          /* Fallback: Streamlit's Browse button */
+          var fb = document.querySelector('[data-testid="stFileUploaderDropzone"] button');
+          if (fb) fb.click();
+        });
+        return true;
+      }
+
+      /* Streamlit re-renders asynchronously — retry until the box appears */
+      function retry(n) {
+        if (attachPlus()) return;
+        if (n > 0) setTimeout(function () { retry(n - 1); }, 400);
+      }
+      retry(15);
+
+      /* Also re-attach after Streamlit reruns (MutationObserver) */
+      var obs = new MutationObserver(function () { attachPlus(); });
+      obs.observe(document.body, { childList: true, subtree: true });
+    })();
+    </script>
     """, unsafe_allow_html=True)
 
     # ── Page header ───────────────────────────────────────────────────────────
