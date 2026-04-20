@@ -329,6 +329,20 @@ def init_db():
             count INTEGER NOT NULL DEFAULT 0,
             updated_at TIMESTAMP DEFAULT NOW()
         );
+        CREATE TABLE IF NOT EXISTS user_memory (
+            uid VARCHAR(64) PRIMARY KEY,
+            leagues TEXT[] DEFAULT '{}',
+            teams  TEXT[] DEFAULT '{}',
+            topics TEXT[] DEFAULT '{}',
+            query_count INTEGER DEFAULT 0,
+            last_seen TIMESTAMP DEFAULT NOW()
+        );
+        CREATE TABLE IF NOT EXISTS user_query_log (
+            id SERIAL PRIMARY KEY,
+            uid VARCHAR(64) NOT NULL,
+            query TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT NOW()
+        );
     """)
     conn.commit()
     cur.close()
@@ -1056,6 +1070,124 @@ if nav_page == "AI Scout":
         except Exception:
             pass
 
+    # ── Known leagues / teams for memory extraction ──────────────────────────
+    _KNOWN_LEAGUES = [
+        "premier league", "la liga", "bundesliga", "serie a", "ligue 1",
+        "champions league", "europa league", "conference league",
+        "mls", "j1 league", "k league", "eredivisie", "scottish premiership",
+        "saudi pro league", "brasileirao", "argentina", "world cup", "euros",
+    ]
+    _TEAM_LEAGUE_MAP = {
+        # PL
+        "liverpool": "Premier League", "lfc": "Premier League",
+        "arsenal": "Premier League", "chelsea": "Premier League",
+        "man city": "Premier League", "manchester city": "Premier League",
+        "man united": "Premier League", "manchester united": "Premier League",
+        "spurs": "Premier League", "tottenham": "Premier League",
+        "newcastle": "Premier League", "aston villa": "Premier League",
+        "everton": "Premier League", "west ham": "Premier League",
+        # La Liga
+        "real madrid": "La Liga", "barcelona": "La Liga", "barca": "La Liga",
+        "atletico": "La Liga", "sevilla": "La Liga", "villarreal": "La Liga",
+        # Bundesliga
+        "bayern": "Bundesliga", "dortmund": "Bundesliga", "bvb": "Bundesliga",
+        "leverkusen": "Bundesliga", "leipzig": "Bundesliga",
+        # Serie A
+        "juventus": "Serie A", "juve": "Serie A", "inter": "Serie A",
+        "ac milan": "Serie A", "napoli": "Serie A", "roma": "Serie A",
+        # Ligue 1
+        "psg": "Ligue 1", "paris saint-germain": "Ligue 1",
+        "marseille": "Ligue 1", "lyon": "Ligue 1", "monaco": "Ligue 1",
+    }
+    _KNOWN_TOPICS = {
+        "tactics": ["tactic", "formation", "press", "defensive", "attacking", "style", "system"],
+        "transfers": ["transfer", "signing", "sign", "buy", "sell", "loan", "move", "deal"],
+        "stats": ["stat", "xg", "expected goals", "data", "metric", "number", "model", "regression"],
+        "title race": ["title", "champion", "win the league", "top of", "points behind", "games left"],
+        "relegation": ["relegat", "drop", "bottom", "survival", "go down"],
+        "injuries": ["injur", "fit", "fitness", "return", "out", "available"],
+        "managers": ["manager", "coach", "sack", "appoint", "fired", "hired"],
+    }
+
+    def _extract_entities(query):
+        """Return (leagues, teams, topics) found in query string."""
+        q = query.lower()
+        leagues = [l for l in _KNOWN_LEAGUES if l in q]
+        teams   = [t for t in _TEAM_LEAGUE_MAP if t in q]
+        topics  = [topic for topic, kws in _KNOWN_TOPICS.items() if any(kw in q for kw in kws)]
+        # Infer league from team if not already found
+        for t in teams:
+            inferred = _TEAM_LEAGUE_MAP[t].lower()
+            if inferred not in leagues:
+                leagues.append(inferred)
+        return leagues, teams, topics
+
+    def _get_user_memory(uid):
+        try:
+            conn = get_db_conn()
+            cur  = conn.cursor()
+            cur.execute(
+                "SELECT leagues, teams, topics, query_count FROM user_memory WHERE uid = %s",
+                (uid,),
+            )
+            row = cur.fetchone()
+            cur.close(); conn.close()
+            if row:
+                return {"leagues": row[0] or [], "teams": row[1] or [],
+                        "topics": row[2] or [], "query_count": row[3]}
+        except Exception:
+            pass
+        return {"leagues": [], "teams": [], "topics": [], "query_count": 0}
+
+    def _update_user_memory(uid, query):
+        try:
+            new_leagues, new_teams, new_topics = _extract_entities(query)
+            conn = get_db_conn()
+            cur  = conn.cursor()
+            # Log the query (keep last 50 per user)
+            cur.execute(
+                "INSERT INTO user_query_log (uid, query) VALUES (%s, %s)",
+                (uid, query[:500]),
+            )
+            cur.execute(
+                "DELETE FROM user_query_log WHERE uid = %s AND id NOT IN "
+                "(SELECT id FROM user_query_log WHERE uid = %s ORDER BY created_at DESC LIMIT 50)",
+                (uid, uid),
+            )
+            # Upsert memory — merge new entities with existing, keep top 8 each
+            cur.execute(
+                """
+                INSERT INTO user_memory (uid, leagues, teams, topics, query_count, last_seen)
+                VALUES (%s, %s, %s, %s, 1, NOW())
+                ON CONFLICT (uid) DO UPDATE SET
+                    leagues     = (
+                        SELECT ARRAY(
+                            SELECT DISTINCT unnest(user_memory.leagues || EXCLUDED.leagues)
+                            LIMIT 8
+                        )
+                    ),
+                    teams       = (
+                        SELECT ARRAY(
+                            SELECT DISTINCT unnest(user_memory.teams || EXCLUDED.teams)
+                            LIMIT 8
+                        )
+                    ),
+                    topics      = (
+                        SELECT ARRAY(
+                            SELECT DISTINCT unnest(user_memory.topics || EXCLUDED.topics)
+                            LIMIT 6
+                        )
+                    ),
+                    query_count = user_memory.query_count + 1,
+                    last_seen   = NOW()
+                """,
+                (uid, new_leagues, new_teams, new_topics),
+            )
+            conn.commit()
+            cur.close(); conn.close()
+        except Exception:
+            pass
+
     def _friendly_ai_error(exc):
         msg = str(exc).lower()
         if "connection" in msg or "timeout" in msg or "unreachable" in msg or "name or service not known" in msg:
@@ -1424,19 +1556,30 @@ if nav_page == "AI Scout":
                 _split_season = f"{_yr - 1}-{str(_yr)[2:]}" if _now.month < 7 else f"{_yr}-{str(_yr + 1)[2:]}"
                 _cal_season   = str(_yr)
 
-                # Detect if the question touches league standings / positions
+                # Detect if the question touches league standings / positions / title race
                 _standing_keywords = [
                     "table", "standing", "position", "relegat", "top four", "top 4",
                     "champion", "title", "europe", "european", "ucl", "top of",
                     "bottom of", "how are", "where are", "season", "league",
                     "premier league", "la liga", "bundesliga", "serie a", "ligue 1",
+                    "win the league", "win the title", "can they win", "points behind",
+                    "points gap", "games left", "games remaining", "mathematically",
+                    "race", "still in it", "overtake", "catch up", "drop points",
+                    "unbeaten", "form", "run in", "fixtures left",
                 ]
                 _q_lower = user_input.lower()
                 _needs_standings = any(kw in _q_lower for kw in _standing_keywords)
 
+                # Also trigger if a known team is mentioned (infer their league)
+                _team_league_for_search = None
+                for _tm, _lg in _TEAM_LEAGUE_MAP.items():
+                    if _tm in _q_lower:
+                        _team_league_for_search = _lg
+                        _needs_standings = True
+                        break
+
                 if _needs_standings:
-                    # Work out which league the user is asking about
-                    _league_map = {
+                    _league_search_map = {
                         "premier league": f"Premier League table {_split_season}",
                         "la liga":        f"La Liga table {_split_season}",
                         "bundesliga":     f"Bundesliga table {_split_season}",
@@ -1444,24 +1587,52 @@ if nav_page == "AI Scout":
                         "ligue 1":        f"Ligue 1 table {_split_season}",
                         "mls":            f"MLS standings {_cal_season}",
                         "champions league": f"Champions League {_split_season} standings",
+                        "eredivisie":     f"Eredivisie table {_split_season}",
                     }
+                    # Determine target league from query text or inferred team
                     _bonus_query = None
-                    for _key, _q in _league_map.items():
+                    for _key, _sq in _league_search_map.items():
                         if _key in _q_lower:
-                            _bonus_query = _q
+                            _bonus_query = _sq
                             break
+                    if not _bonus_query and _team_league_for_search:
+                        _bonus_query = _league_search_map.get(
+                            _team_league_for_search.lower(),
+                            f"{_team_league_for_search} table {_split_season}",
+                        )
                     if not _bonus_query:
-                        # Generic fallback standings search
                         _bonus_query = f"Premier League table {_split_season} current standings"
-                    extra = _search_football_context(_bonus_query, max_snippets=6)
-                    web_snippets = web_snippets + extra  # combine both result sets
 
-            # Step 2: build dynamic system prompt
+                    extra = _search_football_context(_bonus_query, max_snippets=6)
+                    web_snippets = web_snippets + extra
+
+            # Step 2: fetch user memory + build dynamic system prompt
             _today_str = _now.strftime("%B %d, %Y")
+            _mem = _get_user_memory(_uid)
+            _mem_block = ""
+            if _mem["query_count"] > 0:
+                _mem_parts = []
+                if _mem["leagues"]:
+                    _mem_parts.append("Leagues they follow: " + ", ".join(_mem["leagues"]))
+                if _mem["teams"]:
+                    _mem_parts.append("Teams they ask about: " + ", ".join(_mem["teams"]))
+                if _mem["topics"]:
+                    _mem_parts.append("Topics they care about: " + ", ".join(_mem["topics"]))
+                _mem_parts.append(f"Total questions asked: {_mem['query_count']}")
+                _mem_block = (
+                    "══ USER MEMORY — PERSONALISE YOUR RESPONSE ══\n"
+                    "Based on this user's past conversations:\n"
+                    + "\n".join(f"• {p}" for p in _mem_parts) + "\n"
+                    "Use this to tailor your tone and focus. If they always ask about Liverpool "
+                    "and Premier League, lean into that context without them having to repeat it.\n"
+                    "══════════════════════════════════════════════\n\n"
+                )
+
             dynamic_system = (
                 "You are an expert football (soccer) analyst, econometrics tutor, and helpful guide "
                 "embedded inside a Football Econometrics Dashboard covering 30 competitions worldwide.\n"
                 f"Today's date is {_today_str}. The current European club season is {_split_season}.\n\n"
+                + _mem_block
 
                 "══ SITE NAVIGATION — HELP USERS FIND THINGS ══\n"
                 "This dashboard has two sections in the sidebar:\n"
@@ -1493,15 +1664,17 @@ if nav_page == "AI Scout":
                 "═════════════════════════════════════════════════\n\n"
 
                 "══ CRITICAL DATA RULES — READ BEFORE EVERY REPLY ══\n"
-                "1. NEVER state league standings, positions, relegation battles, top-four races, "
-                "title leaders, or recent match results from your training memory. Your training data "
-                "is YEARS out of date for these facts.\n"
-                "2. ONLY use the web search results below for any facts about: current standings, "
-                "relegation danger, European races, recent transfers, managerial changes, injuries, results.\n"
-                "3. If the web results do not contain a specific fact, say 'I don't have live data "
-                "on that right now — please check BBC Sport or the official league site for the "
-                f"latest {_split_season} standings.'\n"
-                "4. Do NOT blend training-data guesses with web facts. If uncertain, admit it.\n"
+                "1. NEVER use your training memory for: league tables, points totals, positions, "
+                "title races, relegation battles, top-four races, recent results, transfers, injuries, "
+                "or managerial changes. Your training data is YEARS out of date for these facts.\n"
+                "2. For ANY question about whether a team CAN win the title / avoid relegation / "
+                "reach Europe: you MUST check the web results for their current points, position, "
+                "and games remaining BEFORE answering. Do not give preseason predictions as an answer.\n"
+                "3. ONLY use the web search results for factual claims about current season data.\n"
+                "4. If the web results do not contain enough detail, say exactly: "
+                "'I don't have reliable live data on that right now — for the latest "
+                f"{_split_season} standings check BBC Sport or the official league site.'\n"
+                "5. Never blend training-data guesses with web facts. If uncertain, say so.\n"
                 "══════════════════════════════════════════════════════\n\n"
 
                 "Explain concepts in plain, conversational English. Be helpful and encouraging. "
@@ -1547,6 +1720,7 @@ if nav_page == "AI Scout":
                     )
                     reply = response.choices[0].message.content
                     _increment_scout_usage(_uid, _week_key)
+                    _update_user_memory(_uid, user_input)
                 except Exception as exc:
                     reply = _friendly_ai_error(exc)
             st.markdown(reply)
