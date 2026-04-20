@@ -1169,6 +1169,7 @@ if nav_page == "AI Scout":
     [data-testid="stChatInput"] textarea {
         background: transparent !important;
         font-size: 1rem !important;
+        transition: padding-top 0.15s;
     }
     /* Send button: blue square on the right */
     [data-testid="stChatInputSubmitButton"] button {
@@ -1176,7 +1177,7 @@ if nav_page == "AI Scout":
         border-radius: 8px !important;
         color: white !important;
     }
-    /* File uploader: invisible 1×1px at bottom-left corner (stays in DOM for JS) */
+    /* File uploader: invisible 1×1px, stays in DOM for JS */
     div[data-testid="stFileUploader"] {
         position: fixed !important;
         bottom: 2px !important; left: 2px !important;
@@ -1190,33 +1191,113 @@ if nav_page == "AI Scout":
         pointer-events: auto !important;
         width: 1px !important; height: 1px !important;
     }
-    /* Filename chip */
-    .scout-chip {
-        display: inline-flex; align-items: center; gap: 8px;
-        background: rgba(30,136,229,0.15);
-        border: 1px solid rgba(30,136,229,0.4);
-        border-radius: 20px; padding: 5px 12px;
-        font-size: 0.83rem; color: #90CAF9; margin: 6px 0;
+    /* Error popup overlay */
+    #scout-error-overlay {
+        display: none;
+        position: fixed; inset: 0;
+        background: rgba(0,0,0,0.55);
+        z-index: 99999;
+        align-items: center; justify-content: center;
+    }
+    #scout-error-overlay.visible { display: flex; }
+    #scout-error-box {
+        background: #1e2433; border: 1px solid #ef5350;
+        border-radius: 14px; padding: 28px 32px; max-width: 340px;
+        text-align: center; color: #fff;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+    }
+    #scout-error-box h3 { color: #ef5350; margin: 0 0 12px; font-size: 1.1rem; }
+    #scout-error-box p  { margin: 0 0 18px; color: #ccc; font-size: 0.92rem; line-height: 1.5; }
+    #scout-error-box button {
+        background: #1E88E5; color: #fff; border: none;
+        border-radius: 8px; padding: 8px 28px;
+        font-size: 0.95rem; cursor: pointer;
     }
     </style>
+
+    <!-- Error popup for invalid file types -->
+    <div id="scout-error-overlay">
+      <div id="scout-error-box">
+        <h3>&#10060; Invalid file format</h3>
+        <p>That file type isn't supported.<br>Please use one of:<br>
+           <strong>PNG &nbsp;·&nbsp; JPG / JPEG &nbsp;·&nbsp; WebP</strong></p>
+        <button onclick="document.getElementById('scout-error-overlay').classList.remove('visible')">OK</button>
+      </div>
+    </div>
     """, unsafe_allow_html=True)
 
-    # ── JS via components.html (scripts actually execute here, unlike st.markdown) ──
-    # Creates a + button inside the chat input; clicks the hidden file input.
+    # ── JS via components.html — runs in same-origin iframe, can reach parent DOM ──
     components.html("""
     <script>
     (function () {
       var P = window.parent.document;
 
+      /* ── Show the error overlay ── */
+      function showError() {
+        var ov = P.getElementById('scout-error-overlay');
+        if (ov) ov.classList.add('visible');
+      }
+
+      /* ── Update filename chip inside the chat box ── */
+      function updateChip(chatBox) {
+        var fnameEl = P.getElementById('scout-fname');
+        var fname   = fnameEl ? fnameEl.textContent.trim() : '';
+        var chip    = P.getElementById('scout-file-chip');
+
+        if (fname) {
+          if (!chip) {
+            chip = P.createElement('div');
+            chip.id = 'scout-file-chip';
+            chip.style.cssText =
+              'position:absolute;top:8px;left:44px;right:54px;' +
+              'background:rgba(30,136,229,0.18);' +
+              'border:1px solid rgba(30,136,229,0.5);' +
+              'border-radius:16px;padding:3px 12px;' +
+              'font-size:0.8rem;color:#90CAF9;' +
+              'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;' +
+              'z-index:150;pointer-events:none;';
+          }
+          chip.textContent = '\uD83D\uDCCE ' + fname;
+          if (!chatBox.contains(chip)) chatBox.insertBefore(chip, chatBox.firstChild);
+          /* Push textarea down so chip doesn't overlap text */
+          var ta = chatBox.querySelector('textarea');
+          if (ta) ta.style.paddingTop = '30px';
+        } else {
+          if (chip) chip.remove();
+          var ta = chatBox.querySelector('textarea');
+          if (ta) ta.style.paddingTop = '';
+        }
+      }
+
+      /* ── Wire up file-input validation ── */
+      function setupValidation(inp) {
+        if (inp._scoutValidated) return;
+        inp._scoutValidated = true;
+        var VALID_TYPES = ['image/png','image/jpeg','image/webp'];
+        var VALID_EXTS  = ['.png','.jpg','.jpeg','.webp'];
+        inp.addEventListener('change', function (e) {
+          var file = e.target.files && e.target.files[0];
+          if (!file) return;
+          var ext = '.' + file.name.split('.').pop().toLowerCase();
+          if (!VALID_TYPES.includes(file.type) && !VALID_EXTS.includes(ext)) {
+            e.stopImmediatePropagation();
+            inp.value = '';
+            showError();
+          }
+        }, true); /* capture phase — fires before Streamlit's listener */
+      }
+
+      /* ── Main setup: + button, chip, validation ── */
       function setup() {
         var chatBox = P.querySelector('[data-testid="stChatInput"]');
         if (!chatBox) return false;
+        chatBox.style.position = 'relative';
 
-        /* Reuse or create the + button */
+        /* + button */
         var btn = P.getElementById('scout-plus-btn');
         if (!btn) {
           btn = P.createElement('button');
-          btn.id = 'scout-plus-btn';
+          btn.id    = 'scout-plus-btn';
           btn.title = 'Attach image';
           btn.textContent = '+';
           btn.style.cssText =
@@ -1227,20 +1308,23 @@ if nav_page == "AI Scout":
             'display:flex;align-items:center;justify-content:center;';
           btn.onmouseenter = function(){ btn.style.color='#fff'; };
           btn.onmouseleave = function(){ btn.style.color='#9CA3AF'; };
+          btn.onclick = function (e) {
+            e.preventDefault(); e.stopPropagation();
+            var inp = P.querySelector('input[type="file"]');
+            if (inp) { inp.click(); return; }
+            var fb = P.querySelector('[data-testid="stFileUploaderDropzone"] button');
+            if (fb) fb.click();
+          };
         }
-
-        /* Place inside chat box if not already there */
-        chatBox.style.position = 'relative';
         if (!chatBox.contains(btn)) chatBox.appendChild(btn);
 
-        /* Click handler → trigger native file picker */
-        btn.onclick = function (e) {
-          e.preventDefault(); e.stopPropagation();
-          var inp = P.querySelector('input[type="file"]');
-          if (inp) { inp.click(); return; }
-          var fb = P.querySelector('[data-testid="stFileUploaderDropzone"] button');
-          if (fb) fb.click();
-        };
+        /* File input validation */
+        var inp = P.querySelector('input[type="file"]');
+        if (inp) setupValidation(inp);
+
+        /* Filename chip */
+        updateChip(chatBox);
+
         return true;
       }
 
@@ -1250,7 +1334,7 @@ if nav_page == "AI Scout":
       }
       retry(20);
 
-      /* Re-attach after every Streamlit DOM update */
+      /* Re-run setup after every Streamlit DOM update */
       new MutationObserver(function () { setup(); })
         .observe(P.body, { childList: true, subtree: true });
     })();
@@ -1282,18 +1366,17 @@ if nav_page == "AI Scout":
         st.session_state.scout_upload_key += 1
         st.rerun()
 
-    # ── Filename chip + ✕ remove ──────────────────────────────────────────────
+    # ── Pass filename to JS via hidden element; ✕ button below ──────────────
+    _fname_for_js = st.session_state.scout_image_data[2] if st.session_state.scout_image_data else ""
+    st.markdown(
+        f'<div id="scout-fname" style="display:none">{_fname_for_js}</div>',
+        unsafe_allow_html=True,
+    )
     if st.session_state.scout_image_data:
-        _fname = st.session_state.scout_image_data[2]
-        _c1, _c2 = st.columns([9, 1])
-        with _c1:
-            st.markdown(f'<div class="scout-chip">📎 {_fname}</div>',
-                        unsafe_allow_html=True)
-        with _c2:
-            if st.button("✕", key="scout_rm", help="Remove image"):
-                st.session_state.scout_image_data  = None
-                st.session_state.scout_upload_key += 1
-                st.rerun()
+        if st.button("✕ Remove attachment", key="scout_rm", help="Clear uploaded image"):
+            st.session_state.scout_image_data  = None
+            st.session_state.scout_upload_key += 1
+            st.rerun()
 
     # ── Hidden Streamlit file uploader (JS + button triggers it) ─────────────
     uploaded_image = st.file_uploader(
