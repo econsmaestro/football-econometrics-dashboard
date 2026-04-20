@@ -1287,7 +1287,7 @@ if nav_page == "AI Scout":
     if "scout_upload_key" not in st.session_state:
         st.session_state.scout_upload_key = 0      # increment to reset uploader
 
-    # ── CSS: style chat input + hide file uploader ───────────────────────────
+    # ── CSS: style chat input only ────────────────────────────────────────────
     st.markdown("""
     <style>
     /* Chat input: blue border, rounded, dark background */
@@ -1295,155 +1295,58 @@ if nav_page == "AI Scout":
         border: 1.5px solid #1E88E5 !important;
         border-radius: 14px !important;
         background: #111827 !important;
-        position: relative !important;
-        padding-left: 44px !important;
     }
     [data-testid="stChatInput"] textarea {
         background: transparent !important;
         font-size: 1rem !important;
-        transition: padding-top 0.15s;
     }
-    /* Send button: blue square on the right */
+    /* Send button: blue */
     [data-testid="stChatInputSubmitButton"] button {
         background: #1E88E5 !important;
         border-radius: 8px !important;
         color: white !important;
     }
-    /* File uploader: invisible 1×1px, stays in DOM for JS */
+    /* Compact file uploader — hide dropzone, show only the browse button */
     div[data-testid="stFileUploader"] {
-        position: fixed !important;
-        bottom: 2px !important; left: 2px !important;
-        width: 1px !important; height: 1px !important;
-        opacity: 0 !important;
-        overflow: visible !important;
-        z-index: 0 !important;
-        pointer-events: none !important;
+        background: transparent !important;
+        border: none !important;
+        padding: 0 !important;
     }
-    div[data-testid="stFileUploader"] input[type="file"] {
-        pointer-events: auto !important;
-        width: 1px !important; height: 1px !important;
+    div[data-testid="stFileUploaderDropzone"] {
+        background: #1a2035 !important;
+        border: 1px solid rgba(30,136,229,0.4) !important;
+        border-radius: 8px !important;
+        padding: 6px 12px !important;
+        min-height: unset !important;
     }
-    /* Error popup overlay */
-    #scout-error-overlay {
-        display: none;
-        position: fixed; inset: 0;
-        background: rgba(0,0,0,0.55);
-        z-index: 99999;
-        align-items: center; justify-content: center;
+    div[data-testid="stFileUploaderDropzone"] > div:first-child {
+        display: none !important;
     }
-    #scout-error-overlay.visible { display: flex; }
-    #scout-error-box {
-        background: #1e2433; border: 1px solid #ef5350;
-        border-radius: 14px; padding: 28px 32px; max-width: 340px;
-        text-align: center; color: #fff;
-        box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+    div[data-testid="stFileUploaderDropzone"] small {
+        display: none !important;
     }
-    #scout-error-box h3 { color: #ef5350; margin: 0 0 12px; font-size: 1.1rem; }
-    #scout-error-box p  { margin: 0 0 18px; color: #ccc; font-size: 0.92rem; line-height: 1.5; }
-    #scout-error-box button {
-        background: #1E88E5; color: #fff; border: none;
-        border-radius: 8px; padding: 8px 28px;
-        font-size: 0.95rem; cursor: pointer;
+    div[data-testid="stFileUploaderDropzone"] span {
+        display: none !important;
+    }
+    div[data-testid="stFileUploaderDropzone"] button {
+        background: transparent !important;
+        border: none !important;
+        color: #90CAF9 !important;
+        font-size: 0.82rem !important;
+        padding: 2px 4px !important;
+        cursor: pointer !important;
+    }
+    div[data-testid="stFileUploaderDropzone"] button::before {
+        content: "📎 ";
     }
     </style>
-
-    <!-- Error popup for invalid file types -->
-    <div id="scout-error-overlay">
-      <div id="scout-error-box">
-        <h3>&#10060; Invalid file format</h3>
-        <p>That file type isn't supported.<br>Please use one of:<br>
-           <strong>PNG &nbsp;·&nbsp; JPG / JPEG &nbsp;·&nbsp; WebP</strong></p>
-        <button onclick="document.getElementById('scout-error-overlay').classList.remove('visible')">OK</button>
-      </div>
-    </div>
     """, unsafe_allow_html=True)
-
-    # ── JS via components.html — runs in same-origin iframe, can reach parent DOM ──
-    components.html("""
-    <script>
-    (function () {
-      var P = window.parent.document;
-
-      /* ── Show the error overlay ── */
-      function showError() {
-        var ov = P.getElementById('scout-error-overlay');
-        if (ov) ov.classList.add('visible');
-      }
-
-      /* ── Wire up file-input validation ── */
-      function setupValidation(inp) {
-        if (inp._scoutValidated) return;
-        inp._scoutValidated = true;
-        var VALID_TYPES = ['image/png','image/jpeg','image/webp'];
-        var VALID_EXTS  = ['.png','.jpg','.jpeg','.webp'];
-        inp.addEventListener('change', function (e) {
-          var file = e.target.files && e.target.files[0];
-          if (!file) return;
-          var ext = '.' + file.name.split('.').pop().toLowerCase();
-          if (!VALID_TYPES.includes(file.type) && !VALID_EXTS.includes(ext)) {
-            e.stopImmediatePropagation();
-            inp.value = '';
-            showError();
-          }
-        }, true); /* capture phase — fires before Streamlit's listener */
-      }
-
-      /* ── Main setup: + button, chip, validation ── */
-      function setup() {
-        var chatBox = P.querySelector('[data-testid="stChatInput"]');
-        if (!chatBox) return false;
-        chatBox.style.position = 'relative';
-
-        /* + button */
-        var btn = P.getElementById('scout-plus-btn');
-        if (!btn) {
-          btn = P.createElement('button');
-          btn.id    = 'scout-plus-btn';
-          btn.title = 'Attach image';
-          btn.textContent = '+';
-          btn.style.cssText =
-            'position:absolute;bottom:10px;left:10px;z-index:200;' +
-            'background:transparent;border:none;color:#9CA3AF;' +
-            'font-size:26px;font-weight:300;line-height:1;' +
-            'width:32px;height:32px;cursor:pointer;' +
-            'display:flex;align-items:center;justify-content:center;';
-          btn.onmouseenter = function(){ btn.style.color='#fff'; };
-          btn.onmouseleave = function(){ btn.style.color='#9CA3AF'; };
-          btn.onclick = function (e) {
-            e.preventDefault(); e.stopPropagation();
-            var inp = P.querySelector('input[type="file"]');
-            if (inp) { inp.click(); return; }
-            var fb = P.querySelector('[data-testid="stFileUploaderDropzone"] button');
-            if (fb) fb.click();
-          };
-        }
-        if (!chatBox.contains(btn)) chatBox.appendChild(btn);
-
-        /* File input validation */
-        var inp = P.querySelector('input[type="file"]');
-        if (inp) setupValidation(inp);
-
-        return true;
-      }
-
-      function retry(n) {
-        if (setup()) return;
-        if (n > 0) setTimeout(function () { retry(n - 1); }, 500);
-      }
-      retry(20);
-
-      /* Re-run setup after every Streamlit DOM update */
-      new MutationObserver(function () { setup(); })
-        .observe(P.body, { childList: true, subtree: true });
-    })();
-    </script>
-    """, height=0)
 
     # ── Page header ───────────────────────────────────────────────────────────
     st.title("AI Football Scout")
     st.caption(
         "Ask anything about football stats, tactics, or econometrics. "
-        "Use **+** to attach a screenshot for the AI to analyse."
+        "Use the 📎 button below to attach a screenshot for the AI to analyse."
     )
 
     if _remaining > 0:
@@ -1464,19 +1367,30 @@ if nav_page == "AI Scout":
         st.session_state.scout_upload_key += 1
         st.rerun()
 
-    # ── Attached image filename box (shown above chat history) ───────────────
-    if st.session_state.scout_image_data:
+    # ── File uploader row (always visible, compact) ──────────────────────────
+    if not st.session_state.scout_image_data:
+        uploaded_image = st.file_uploader(
+            "Attach image",
+            type=["png", "jpg", "jpeg", "webp"],
+            key=f"scout_image_{st.session_state.scout_upload_key}",
+            label_visibility="collapsed",
+        )
+        if uploaded_image is not None:
+            uploaded_image.seek(0)
+            raw_bytes = uploaded_image.read()
+            mime = uploaded_image.type or "image/png"
+            name = uploaded_image.name
+            st.session_state.scout_image_data = (raw_bytes, mime, name)
+            st.rerun()
+    else:
+        # Show filename box with remove button once image is attached
         _fname = st.session_state.scout_image_data[2]
         _fcol1, _fcol2 = st.columns([0.88, 0.12])
         with _fcol1:
             st.markdown(
-                f'<div style="'
-                f'background:#1a2035;border:1px solid rgba(30,136,229,0.45);'
-                f'border-radius:8px;padding:7px 12px;'
-                f'display:flex;align-items:center;gap:8px;'
-                f'font-size:0.82rem;color:#90CAF9;">'
-                f'&#128247; <span style="font-weight:500">{_fname}</span>'
-                f'</div>',
+                f'<div style="background:#1a2035;border:1px solid rgba(30,136,229,0.45);'
+                f'border-radius:8px;padding:7px 12px;font-size:0.82rem;color:#90CAF9;">'
+                f'&#128247; <strong>{_fname}</strong></div>',
                 unsafe_allow_html=True,
             )
         with _fcol2:
@@ -1484,19 +1398,6 @@ if nav_page == "AI Scout":
                 st.session_state.scout_image_data = None
                 st.session_state.scout_upload_key += 1
                 st.rerun()
-
-    # ── Hidden Streamlit file uploader (JS + button triggers it) ─────────────
-    uploaded_image = st.file_uploader(
-        "img", type=["png", "jpg", "jpeg", "webp"],
-        key=f"scout_image_{st.session_state.scout_upload_key}",
-        label_visibility="collapsed",
-    )
-    if uploaded_image is not None:
-        uploaded_image.seek(0)
-        raw_bytes = uploaded_image.read()
-        mime = uploaded_image.type or "image/png"
-        name = uploaded_image.name
-        st.session_state.scout_image_data = (raw_bytes, mime, name)
 
     # ── Message history (full width) ─────────────────────────────────────────
     for msg in st.session_state.ai_scout_messages:
