@@ -1534,8 +1534,7 @@ if nav_page == "AI Scout":
                 "embedded inside a Football Econometrics Dashboard covering 30 competitions worldwide.\n"
                 f"Today's date is {_today_str}. The current European club season is {_split_season}.\n\n"
                 + _mem_block
-
-                "══ SITE NAVIGATION — HELP USERS FIND THINGS ══\n"
+                + "══ SITE NAVIGATION — HELP USERS FIND THINGS ══\n"
                 "This dashboard has two sections in the sidebar:\n"
                 "• Competition selector — choose any of 30 competitions (Premier League, La Liga, Bundesliga, "
                 "Serie A, Ligue 1, Champions League, World Cup, MLS, J1 League, and many more). "
@@ -1564,7 +1563,7 @@ if nav_page == "AI Scout":
                 "NEVER tell the user that image or file uploads are not supported — they are.\n"
                 "═════════════════════════════════════════════════\n\n"
 
-                "══ CRITICAL DATA RULES — READ BEFORE EVERY REPLY ══\n"
+                + "══ CRITICAL DATA RULES — READ BEFORE EVERY REPLY ══\n"
                 "Use the right data source for the right question:\n\n"
                 "CURRENT SEASON questions (standings, results, title race, relegation, injuries, transfers):\n"
                 "→ Use the web search results ONLY. Your training memory is out of date for these.\n"
@@ -1584,7 +1583,7 @@ if nav_page == "AI Scout":
                 "If giving a prediction based on general knowledge, say so. Never present a guess as fact.\n"
                 "══════════════════════════════════════════════════════\n\n"
 
-                "Explain concepts in plain, conversational English. Be helpful and encouraging. "
+                + "Explain concepts in plain, conversational English. Be helpful and encouraging. "
                 "When an image is attached, describe what you see and provide relevant football insights.\n\n"
                 "SOURCE CITATION RULE: At the end of every reply that uses web search results, include "
                 "a '**Sources**' section listing every source used. Format:\n"
