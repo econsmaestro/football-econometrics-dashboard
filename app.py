@@ -1299,15 +1299,14 @@ if nav_page == "AI Scout":
 
     if "ai_scout_messages" not in st.session_state:
         st.session_state.ai_scout_messages = []
-    if "scout_image_data" not in st.session_state:
-        st.session_state.scout_image_data = None   # (bytes, mime, filename) or None
+    if "scout_images" not in st.session_state:
+        st.session_state.scout_images = []       # list of (bytes, mime, name)
     if "scout_upload_key" not in st.session_state:
-        st.session_state.scout_upload_key = 0      # increment to reset uploader
+        st.session_state.scout_upload_key = 0
 
-    # ── CSS: style chat input only ────────────────────────────────────────────
+    # ── CSS ───────────────────────────────────────────────────────────────────
     st.markdown("""
     <style>
-    /* Chat input: blue border, rounded, dark background */
     [data-testid="stChatInput"] {
         border: 1.5px solid #1E88E5 !important;
         border-radius: 14px !important;
@@ -1317,44 +1316,54 @@ if nav_page == "AI Scout":
         background: transparent !important;
         font-size: 1rem !important;
     }
-    /* Send button: blue */
     [data-testid="stChatInputSubmitButton"] button {
         background: #1E88E5 !important;
         border-radius: 8px !important;
         color: white !important;
     }
-    /* Compact file uploader — hide dropzone, show only the browse button */
+    /* File uploader — shrink to a small icon circle */
     div[data-testid="stFileUploader"] {
+        width: 46px !important;
         background: transparent !important;
         border: none !important;
         padding: 0 !important;
+        margin: 0 !important;
     }
     div[data-testid="stFileUploaderDropzone"] {
-        background: #1a2035 !important;
-        border: 1px solid rgba(30,136,229,0.4) !important;
-        border-radius: 8px !important;
-        padding: 6px 12px !important;
+        background: rgba(30,136,229,0.12) !important;
+        border: 1.5px solid rgba(30,136,229,0.45) !important;
+        border-radius: 50% !important;
+        width: 42px !important;
+        height: 42px !important;
         min-height: unset !important;
+        padding: 0 !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        overflow: hidden !important;
     }
-    div[data-testid="stFileUploaderDropzone"] > div:first-child {
-        display: none !important;
-    }
-    div[data-testid="stFileUploaderDropzone"] small {
-        display: none !important;
-    }
+    div[data-testid="stFileUploaderDropzone"] > section,
+    div[data-testid="stFileUploaderDropzone"] > div:first-child,
+    div[data-testid="stFileUploaderDropzone"] small,
     div[data-testid="stFileUploaderDropzone"] span {
         display: none !important;
     }
     div[data-testid="stFileUploaderDropzone"] button {
         background: transparent !important;
         border: none !important;
-        color: #90CAF9 !important;
-        font-size: 0.82rem !important;
-        padding: 2px 4px !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        min-height: unset !important;
+        width: 42px !important;
+        height: 42px !important;
+        font-size: 0 !important;
+        color: transparent !important;
         cursor: pointer !important;
     }
-    div[data-testid="stFileUploaderDropzone"] button::before {
-        content: "📎 ";
+    div[data-testid="stFileUploaderDropzone"] button::after {
+        content: "📎";
+        font-size: 20px;
+        color: #90CAF9;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -1377,57 +1386,58 @@ if nav_page == "AI Scout":
             "Resets every **Sunday at 23:59 GMT**."
         )
 
-    # ── Top toolbar: clear chat (small, unobtrusive) ──────────────────────────
+    # ── Top toolbar: clear chat ───────────────────────────────────────────────
     if st.button("🗑️ Clear chat", key="scout_clear", help="Clear conversation"):
         st.session_state.ai_scout_messages = []
-        st.session_state.scout_image_data  = None
+        st.session_state.scout_images = []
         st.session_state.scout_upload_key += 1
         st.rerun()
 
-    # ── Message history (full width) ─────────────────────────────────────────
+    # ── Message history ───────────────────────────────────────────────────────
     for msg in st.session_state.ai_scout_messages:
         with st.chat_message(msg["role"]):
-            if msg.get("image_b64"):
-                st.image(
-                    base64.b64decode(msg["image_b64"]),
-                    width=280,
-                    caption="Attached image",
-                )
+            for _b64 in msg.get("images_b64", []):
+                st.image(base64.b64decode(_b64), width=200)
             st.markdown(msg["content"])
 
-    # ── File uploader row — sits just above chat input at the bottom ─────────
-    if not st.session_state.scout_image_data:
-        uploaded_image = st.file_uploader(
-            "Attach image",
-            type=["png", "jpg", "jpeg", "webp"],
-            key=f"scout_image_{st.session_state.scout_upload_key}",
-            label_visibility="collapsed",
-        )
-        if uploaded_image is not None:
-            uploaded_image.seek(0)
-            raw_bytes = uploaded_image.read()
-            mime = uploaded_image.type or "image/png"
-            name = uploaded_image.name
-            st.session_state.scout_image_data = (raw_bytes, mime, name)
-            st.rerun()
-    else:
-        # Show filename box with remove button once image is attached
-        _fname = st.session_state.scout_image_data[2]
-        _fcol1, _fcol2 = st.columns([0.88, 0.12])
-        with _fcol1:
-            st.markdown(
-                f'<div style="background:#1a2035;border:1px solid rgba(30,136,229,0.45);'
-                f'border-radius:8px;padding:7px 12px;font-size:0.82rem;color:#90CAF9;">'
-                f'&#128247; <strong>{_fname}</strong></div>',
-                unsafe_allow_html=True,
-            )
-        with _fcol2:
-            if st.button("✕", key="scout_rm", help="Remove image"):
-                st.session_state.scout_image_data = None
-                st.session_state.scout_upload_key += 1
-                st.rerun()
+    # ── Image chips + 📎 icon uploader (above chat input) ────────────────────
+    _remove_idx = None
+    if st.session_state.scout_images:
+        _chip_cols = st.columns([0.85, 0.08] * len(st.session_state.scout_images))
+        for _i, (_, _, _nm) in enumerate(st.session_state.scout_images):
+            _short = _nm if len(_nm) <= 18 else _nm[:15] + "…"
+            with _chip_cols[_i * 2]:
+                st.markdown(
+                    f'<div style="background:#1a2035;border:1px solid rgba(30,136,229,0.4);'
+                    f'border-radius:20px;padding:5px 10px;font-size:0.78rem;color:#90CAF9;'
+                    f'white-space:nowrap;overflow:hidden;">📷 <b>{_short}</b></div>',
+                    unsafe_allow_html=True,
+                )
+            with _chip_cols[_i * 2 + 1]:
+                if st.button("✕", key=f"rm_img_{_i}_{st.session_state.scout_upload_key}",
+                             help=f"Remove {_nm}"):
+                    _remove_idx = _i
 
-    # ── Chat input — sticks to the bottom ────────────────────────────────────
+    if _remove_idx is not None:
+        st.session_state.scout_images.pop(_remove_idx)
+        st.session_state.scout_upload_key += 1
+        st.rerun()
+
+    # Small 📎 icon file uploader
+    _new_upload = st.file_uploader(
+        "📎",
+        type=["png", "jpg", "jpeg", "webp"],
+        key=f"scout_img_{st.session_state.scout_upload_key}",
+        label_visibility="collapsed",
+    )
+    if _new_upload is not None:
+        _new_upload.seek(0)
+        _rb = _new_upload.read()
+        st.session_state.scout_images.append((_rb, _new_upload.type or "image/png", _new_upload.name))
+        st.session_state.scout_upload_key += 1
+        st.rerun()
+
+    # ── Chat input ────────────────────────────────────────────────────────────
     if _remaining > 0:
         user_input = st.chat_input("Ask about stats, tactics, results, models…")
     else:
@@ -1435,36 +1445,38 @@ if nav_page == "AI Scout":
         st.chat_input("Weekly limit reached — resets Sunday 23:59 GMT", disabled=True)
 
     if user_input:
-        img_data = st.session_state.scout_image_data  # (bytes, mime) or None
+        _imgs = list(st.session_state.scout_images)  # snapshot before clearing
 
         with st.chat_message("user"):
-            if img_data:
-                st.image(img_data[0], width=280, caption="Attached image")
+            for _ib, _im, _in in _imgs:
+                st.image(_ib, width=200)
             st.markdown(user_input)
 
-        # Build API user content
-        if img_data:
-            _img_bytes, _img_mime = _compress_image(img_data[0], img_data[1])
-            b64_img = base64.b64encode(_img_bytes).decode("utf-8")
-            user_content = [
-                {"type": "image_url", "image_url": {
-                    "url": f"data:{_img_mime};base64,{b64_img}",
+        # Build API user content — images first, then text
+        if _imgs:
+            user_content = []
+            _b64_list = []
+            for _ib, _im, _in in _imgs:
+                _cb, _cm = _compress_image(_ib, _im)
+                _b64 = base64.b64encode(_cb).decode("utf-8")
+                _b64_list.append(_b64)
+                user_content.append({"type": "image_url", "image_url": {
+                    "url": f"data:{_cm};base64,{_b64}",
                     "detail": "auto",
-                }},
-                {"type": "text", "text": user_input},
-            ]
+                }})
+            user_content.append({"type": "text", "text": user_input})
         else:
-            b64_img = None
             user_content = user_input
+            _b64_list = []
 
-        # Store in history (include image b64 for display on rerun)
+        # Store in history
         st.session_state.ai_scout_messages.append({
             "role": "user",
             "content": user_input,
-            "image_b64": b64_img,
+            "images_b64": _b64_list,
         })
-        # Clear attached image after sending and reset uploader widget
-        st.session_state.scout_image_data = None
+        # Clear images and reset uploader
+        st.session_state.scout_images = []
         st.session_state.scout_upload_key += 1
 
         with st.chat_message("assistant"):
