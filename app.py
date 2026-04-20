@@ -1013,6 +1013,23 @@ if nav_page == "Feedback":
 if nav_page == "AI Scout":
     import base64
     import openai
+    import io
+
+    def _compress_image(raw_bytes, mime, max_px=1024, quality=82):
+        """Resize image to max_px on longest side and re-encode as JPEG."""
+        try:
+            from PIL import Image as _PIL
+            img = _PIL.open(io.BytesIO(raw_bytes))
+            img = img.convert("RGB")
+            w, h = img.size
+            if max(w, h) > max_px:
+                scale = max_px / max(w, h)
+                img = img.resize((int(w * scale), int(h * scale)), _PIL.LANCZOS)
+            buf = io.BytesIO()
+            img.save(buf, format="JPEG", quality=quality)
+            return buf.getvalue(), "image/jpeg"
+        except Exception:
+            return raw_bytes, mime
 
     record_visit(st.session_state.session_id, "AI Scout")
 
@@ -1427,10 +1444,14 @@ if nav_page == "AI Scout":
 
         # Build API user content
         if img_data:
-            b64_img = base64.b64encode(img_data[0]).decode("utf-8")
+            _img_bytes, _img_mime = _compress_image(img_data[0], img_data[1])
+            b64_img = base64.b64encode(_img_bytes).decode("utf-8")
             user_content = [
+                {"type": "image_url", "image_url": {
+                    "url": f"data:{_img_mime};base64,{b64_img}",
+                    "detail": "auto",
+                }},
                 {"type": "text", "text": user_input},
-                {"type": "image_url", "image_url": {"url": f"data:{img_data[1]};base64,{b64_img}"}},
             ]
         else:
             b64_img = None
