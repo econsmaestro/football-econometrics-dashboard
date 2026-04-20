@@ -1442,8 +1442,9 @@ if nav_page == "AI Scout":
             "content": user_input,
             "image_b64": b64_img,
         })
-        # Clear attached image after sending
+        # Clear attached image after sending and reset uploader widget
         st.session_state.scout_image_data = None
+        st.session_state.scout_upload_key += 1
 
         with st.chat_message("assistant"):
             # Step 1: fetch live web context — always search the user query,
