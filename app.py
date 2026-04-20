@@ -1367,7 +1367,18 @@ if nav_page == "AI Scout":
         st.session_state.scout_upload_key += 1
         st.rerun()
 
-    # ── File uploader row (always visible, compact) ──────────────────────────
+    # ── Message history (full width) ─────────────────────────────────────────
+    for msg in st.session_state.ai_scout_messages:
+        with st.chat_message(msg["role"]):
+            if msg.get("image_b64"):
+                st.image(
+                    base64.b64decode(msg["image_b64"]),
+                    width=280,
+                    caption="Attached image",
+                )
+            st.markdown(msg["content"])
+
+    # ── File uploader row — sits just above chat input at the bottom ─────────
     if not st.session_state.scout_image_data:
         uploaded_image = st.file_uploader(
             "Attach image",
@@ -1399,18 +1410,7 @@ if nav_page == "AI Scout":
                 st.session_state.scout_upload_key += 1
                 st.rerun()
 
-    # ── Message history (full width) ─────────────────────────────────────────
-    for msg in st.session_state.ai_scout_messages:
-        with st.chat_message(msg["role"]):
-            if msg.get("image_b64"):
-                st.image(
-                    base64.b64decode(msg["image_b64"]),
-                    width=280,
-                    caption="Attached image",
-                )
-            st.markdown(msg["content"])
-
-    # ── Chat input — main level so it sticks to the bottom ───────────────────
+    # ── Chat input — sticks to the bottom ────────────────────────────────────
     if _remaining > 0:
         user_input = st.chat_input("Ask about stats, tactics, results, models…")
     else:
@@ -1442,8 +1442,9 @@ if nav_page == "AI Scout":
             "content": user_input,
             "image_b64": b64_img,
         })
-        # Clear attached image after sending
+        # Clear attached image after sending and reset uploader widget
         st.session_state.scout_image_data = None
+        st.session_state.scout_upload_key += 1
 
         with st.chat_message("assistant"):
             # Step 1: fetch live web context — always search the user query,
