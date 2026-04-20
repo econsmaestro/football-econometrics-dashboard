@@ -17,10 +17,57 @@ import time
 from datetime import datetime, timedelta
 from models import load_fallback_data, load_fallback_penalty_data
 
-st.set_page_config(page_title="Football Econometrics Dashboard", layout="wide")
+st.set_page_config(
+    page_title="Football Econometrics Dashboard",
+    page_icon="⚽",
+    layout="wide",
+)
+
+# ── SEO: inject meta description + Open Graph + Twitter Card into <head> ──────
+# JavaScript is needed because Streamlit only lets us write into <body>;
+# this script immediately appends the tags to the real <head> element.
+_OG_URL   = "https://worf.replit.dev"
+_OG_TITLE = "Football Econometrics Dashboard"
+_OG_DESC  = (
+    "Analyse 30 football competitions worldwide — live league tables, "
+    "OLS regression, penalty analysis, AI Scout chatbot, team insights "
+    "and econometrics for the Premier League, La Liga, Bundesliga and more."
+)
+_OG_IMAGE = f"{_OG_URL}/app/static/og-image.png"
+
+st.markdown(f"""
+<script>
+(function(){{
+  var tags = [
+    {{name:"description", content:"{_OG_DESC}"}},
+    {{property:"og:type",        content:"website"}},
+    {{property:"og:url",         content:"{_OG_URL}"}},
+    {{property:"og:title",       content:"{_OG_TITLE}"}},
+    {{property:"og:description", content:"{_OG_DESC}"}},
+    {{property:"og:image",       content:"{_OG_IMAGE}"}},
+    {{name:"twitter:card",        content:"summary_large_image"}},
+    {{name:"twitter:url",         content:"{_OG_URL}"}},
+    {{name:"twitter:title",       content:"{_OG_TITLE}"}},
+    {{name:"twitter:description", content:"{_OG_DESC}"}},
+    {{name:"twitter:image",       content:"{_OG_IMAGE}"}},
+    {{name:"robots",  content:"index, follow"}},
+    {{name:"theme-color", content:"#0e1117"}},
+  ];
+  tags.forEach(function(attrs){{
+    var el = document.createElement("meta");
+    Object.keys(attrs).forEach(function(k){{ el.setAttribute(k, attrs[k]); }});
+    document.head.appendChild(el);
+  }});
+  // Canonical link
+  var link = document.createElement("link");
+  link.rel = "canonical"; link.href = "{_OG_URL}";
+  document.head.appendChild(link);
+}})();
+</script>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+""", unsafe_allow_html=True)
 
 st.markdown("""
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
     /* ===== RESPONSIVE LAYOUT ===== */
 
@@ -1350,6 +1397,19 @@ record_visit(st.session_state.session_id, f"Dashboard - {selected_league}")
 
 st.title("Football Econometrics Dashboard")
 st.caption(f"A reproducible econometrics study of what statistically matters for success in the {selected_league} ({caption_range})")
+
+# ── Internal navigation / feature links (SEO + UX) ───────────────────────────
+st.markdown("""
+<nav aria-label="Feature navigation" style="margin:8px 0 18px 0;display:flex;flex-wrap:wrap;gap:10px;">
+  <a href="#league-table"         style="text-decoration:none;padding:5px 12px;border-radius:20px;background:rgba(255,255,255,0.07);color:#ccc;font-size:0.85rem;border:1px solid rgba(255,255,255,0.15);">📊 League Table</a>
+  <a href="#statistical-analysis" style="text-decoration:none;padding:5px 12px;border-radius:20px;background:rgba(255,255,255,0.07);color:#ccc;font-size:0.85rem;border:1px solid rgba(255,255,255,0.15);">📈 Statistical Analysis</a>
+  <a href="#visualizations"       style="text-decoration:none;padding:5px 12px;border-radius:20px;background:rgba(255,255,255,0.07);color:#ccc;font-size:0.85rem;border:1px solid rgba(255,255,255,0.15);">🗺️ Visualizations</a>
+  <a href="#predictions"          style="text-decoration:none;padding:5px 12px;border-radius:20px;background:rgba(255,255,255,0.07);color:#ccc;font-size:0.85rem;border:1px solid rgba(255,255,255,0.15);">🎯 Points Predictor</a>
+  <a href="#penalty-analysis"     style="text-decoration:none;padding:5px 12px;border-radius:20px;background:rgba(255,255,255,0.07);color:#ccc;font-size:0.85rem;border:1px solid rgba(255,255,255,0.15);">🥅 Penalty Analysis</a>
+  <a href="#team-insights"        style="text-decoration:none;padding:5px 12px;border-radius:20px;background:rgba(255,255,255,0.07);color:#ccc;font-size:0.85rem;border:1px solid rgba(255,255,255,0.15);">🔍 Team Insights</a>
+  <a href="#league-comparisons"   style="text-decoration:none;padding:5px 12px;border-radius:20px;background:rgba(255,255,255,0.07);color:#ccc;font-size:0.85rem;border:1px solid rgba(255,255,255,0.15);">🌍 League Comparisons</a>
+</nav>
+""", unsafe_allow_html=True)
 
 good_reviews = get_good_reviews()
 if good_reviews:
