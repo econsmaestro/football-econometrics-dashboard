@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import pandas as pd
 import numpy as np
 import requests
@@ -13,12 +14,61 @@ from scipy import stats
 import psycopg2
 import os
 import uuid
+import time
 from datetime import datetime, timedelta
+from models import load_fallback_data, load_fallback_penalty_data
 
-st.set_page_config(page_title="Football Econometrics Dashboard", layout="wide")
+st.set_page_config(
+    page_title="Football Econometrics Dashboard",
+    page_icon="⚽",
+    layout="wide",
+)
+
+# ── SEO: inject meta description + Open Graph + Twitter Card into <head> ──────
+# JavaScript is needed because Streamlit only lets us write into <body>;
+# this script immediately appends the tags to the real <head> element.
+_OG_URL   = "https://worf.replit.dev"
+_OG_TITLE = "Football Econometrics Dashboard"
+_OG_DESC  = (
+    "Analyse 30 football competitions worldwide — live league tables, "
+    "OLS regression, penalty analysis, AI Scout chatbot, team insights "
+    "and econometrics for the Premier League, La Liga, Bundesliga and more."
+)
+_OG_IMAGE = f"{_OG_URL}/app/static/og-image.png"
+
+st.markdown(f"""
+<script>
+(function(){{
+  var tags = [
+    {{name:"description", content:"{_OG_DESC}"}},
+    {{property:"og:type",        content:"website"}},
+    {{property:"og:url",         content:"{_OG_URL}"}},
+    {{property:"og:title",       content:"{_OG_TITLE}"}},
+    {{property:"og:description", content:"{_OG_DESC}"}},
+    {{property:"og:image",       content:"{_OG_IMAGE}"}},
+    {{name:"twitter:card",        content:"summary_large_image"}},
+    {{name:"twitter:url",         content:"{_OG_URL}"}},
+    {{name:"twitter:title",       content:"{_OG_TITLE}"}},
+    {{name:"twitter:description", content:"{_OG_DESC}"}},
+    {{name:"twitter:image",       content:"{_OG_IMAGE}"}},
+    {{name:"robots",  content:"index, follow"}},
+    {{name:"theme-color", content:"#0e1117"}},
+  ];
+  tags.forEach(function(attrs){{
+    var el = document.createElement("meta");
+    Object.keys(attrs).forEach(function(k){{ el.setAttribute(k, attrs[k]); }});
+    document.head.appendChild(el);
+  }});
+  // Canonical link
+  var link = document.createElement("link");
+  link.rel = "canonical"; link.href = "{_OG_URL}";
+  document.head.appendChild(link);
+}})();
+</script>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+""", unsafe_allow_html=True)
 
 st.markdown("""
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
     /* ===== RESPONSIVE LAYOUT ===== */
 
@@ -263,7 +313,7 @@ def init_db():
         CREATE TABLE IF NOT EXISTS reviews (
             id SERIAL PRIMARY KEY,
             username VARCHAR(100) NOT NULL,
-            rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 100),
+            rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5),
             comment TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
@@ -272,6 +322,12 @@ def init_db():
             session_id VARCHAR(100) NOT NULL,
             page_name VARCHAR(200) NOT NULL,
             visited_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS ai_scout_usage (
+            uid VARCHAR(64) PRIMARY KEY,
+            week_key VARCHAR(10) NOT NULL,
+            count INTEGER NOT NULL DEFAULT 0,
+            updated_at TIMESTAMP DEFAULT NOW()
         );
     """)
     conn.commit()
@@ -297,6 +353,23 @@ def record_visit(session_id, page_name):
         pass
 
 
+def check_recent_submission(username):
+    """Returns True if this username submitted a review in the last hour."""
+    try:
+        conn = get_db_conn()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT COUNT(*) FROM reviews WHERE LOWER(username) = LOWER(%s) AND created_at >= NOW() - INTERVAL '1 hour'",
+            (username,),
+        )
+        count = cur.fetchone()[0]
+        cur.close()
+        conn.close()
+        return count > 0
+    except Exception:
+        return False
+
+
 def submit_review(username, rating, comment):
     conn = get_db_conn()
     cur = conn.cursor()
@@ -313,7 +386,7 @@ def get_good_reviews():
     conn = get_db_conn()
     cur = conn.cursor()
     cur.execute(
-        "SELECT username, rating, comment, created_at FROM reviews WHERE rating >= 70 ORDER BY created_at DESC LIMIT 20"
+        "SELECT username, rating, comment, created_at FROM reviews WHERE rating >= 4 ORDER BY created_at DESC LIMIT 20"
     )
     rows = cur.fetchall()
     cur.close()
@@ -454,13 +527,23 @@ for _cat in CATEGORY_ORDER:
 
 with st.sidebar:
     st.header("Navigation")
+
+    # ── Restore page from URL so reload keeps you on the same page ──
+    _PAGES = ["Dashboard", "Analytics", "Feedback", "AI Scout"]
+    _qp_page = st.query_params.get("page", "Dashboard")
+    _page_idx = _PAGES.index(_qp_page) if _qp_page in _PAGES else 0
+
     nav_page = st.radio(
         "Go to",
-        ["Dashboard", "Analytics", "Feedback"],
-        index=0,
+        _PAGES,
+        index=_page_idx,
         key="nav_page",
         horizontal=True,
     )
+    # Keep URL in sync so reload restores this page
+    if st.query_params.get("page") != nav_page:
+        st.query_params["page"] = nav_page
+
     st.divider()
     st.header("Controls")
 
@@ -503,7 +586,12 @@ with st.sidebar:
 
     _is_loading = st.session_state.get("_data_loading", False)
 
-    selected_league = st.selectbox("Competition", LEAGUE_OPTIONS, index=0, format_func=_format_league, disabled=_is_loading)
+    # Restore league from URL query params
+    _qp_league = st.query_params.get("league", "Premier League")
+    _league_idx = LEAGUE_OPTIONS.index(_qp_league) if _qp_league in LEAGUE_OPTIONS else 0
+    selected_league = st.selectbox("Competition", LEAGUE_OPTIONS, index=_league_idx, format_func=_format_league, disabled=_is_loading)
+    if st.query_params.get("league") != selected_league:
+        st.query_params["league"] = selected_league
     league_cfg = LEAGUE_CONFIG[selected_league]
 
     _LOGO_OVERRIDES = {
@@ -587,11 +675,9 @@ else:
 
 
 def render_star_display(rating):
-    # Convert 1-100 scale to 5-star display
-    filled = round(rating / 20)
-    filled = max(0, min(5, filled))
+    filled = int(rating)
     empty = 5 - filled
-    return '<span style="color: #FFD700; font-size: 1.3em;">' + ("&#9733;" * filled) + ("&#9734;" * empty) + f'</span> <span style="color:#aaa;font-size:0.85em;">{rating}/100</span>'
+    return '<span style="color: #FFD700; font-size: 1.3em;">' + ("&#9733;" * filled) + ("&#9734;" * empty) + "</span>"
 
 
 if nav_page == "Analytics":
@@ -662,25 +748,22 @@ if nav_page == "Analytics":
         st.metric("Total Reviews", analytics["total_reviews"])
         if analytics["avg_rating"]:
             avg_r = float(analytics["avg_rating"])
-            st.markdown(f"**Average Rating:** {avg_r:.1f} / 100 {render_star_display(round(avg_r))}", unsafe_allow_html=True)
+            st.markdown(f"**Average Rating:** {avg_r:.1f} / 5.0 {render_star_display(round(avg_r))}", unsafe_allow_html=True)
 
     with col_rev2:
         st.subheader("Rating Distribution")
         if analytics["rating_dist"]:
             rd_df = pd.DataFrame(analytics["rating_dist"], columns=["Rating", "Count"])
-            rd_df["Bucket"] = rd_df["Rating"].apply(lambda r:
-                "90-100 (Excellent)" if r >= 90 else
-                "70-89 (Good)" if r >= 70 else
-                "50-69 (Average)" if r >= 50 else
-                "30-49 (Below Avg)" if r >= 30 else
-                "1-29 (Poor)"
-            )
-            bucket_df = rd_df.groupby("Bucket")["Count"].sum().reset_index()
-            bucket_order = ["90-100 (Excellent)", "70-89 (Good)", "50-69 (Average)", "30-49 (Below Avg)", "1-29 (Poor)"]
-            bucket_colors = {"90-100 (Excellent)": "#2ecc71", "70-89 (Good)": "#3498db", "50-69 (Average)": "#f1c40f", "30-49 (Below Avg)": "#e74c3c", "1-29 (Poor)": "#c0392b"}
-            fig_rd = px.pie(bucket_df, values="Count", names="Bucket", template="plotly_dark",
-                           color="Bucket", color_discrete_map=bucket_colors,
-                           category_orders={"Bucket": bucket_order})
+            rd_df["Rating"] = rd_df["Rating"].apply(lambda r: f"{r} Star{'s' if r > 1 else ''}")
+            rating_color_map = {
+                "5 Stars": "#2ecc71",
+                "4 Stars": "#3498db",
+                "3 Stars": "#f1c40f",
+                "2 Stars": "#e74c3c",
+                "1 Star": "#c0392b",
+            }
+            fig_rd = px.pie(rd_df, values="Count", names="Rating", template="plotly_dark",
+                           color_discrete_map=rating_color_map)
             fig_rd.update_layout(height=300, showlegend=True,
                                 legend=dict(orientation="v", yanchor="middle", y=0.5, xanchor="left", x=1.02))
             fig_rd.update_traces(textposition="inside", textinfo="percent+label")
@@ -792,12 +875,11 @@ if nav_page == "Feedback":
         with fb_cols[0]:
             fb_username = st.text_input("Your name", max_chars=100, placeholder="e.g. FootballFan99")
         with fb_cols[1]:
-            fb_rating = st.slider(
-                "Rating (out of 100)",
-                min_value=1, max_value=100,
-                value=80,
-                step=1,
-                help="Drag to select your score out of 100",
+            fb_rating = st.select_slider(
+                "Rating",
+                options=[1, 2, 3, 4, 5],
+                value=5,
+                format_func=lambda x: "\u2605" * x + "\u2606" * (5 - x),
             )
         with fb_cols[2]:
             fb_comment = st.text_area("Comment (optional)", max_chars=500, placeholder="What did you like? Any suggestions?", height=80)
@@ -807,12 +889,25 @@ if nav_page == "Feedback":
             if not fb_username or not fb_username.strip():
                 st.error("Please enter your name.")
             else:
-                try:
-                    submit_review(fb_username.strip(), fb_rating, fb_comment.strip() if fb_comment else None)
-                    st.session_state.show_goal_animation = True
-                    st.rerun()
-                except Exception as ex:
-                    st.error("Could not save your review. Please try again.")
+                _now = datetime.now()
+                _last_submit = st.session_state.get("_last_feedback_submit")
+                _cooldown_secs = 60
+                if _last_submit is not None and (_now - _last_submit).total_seconds() < _cooldown_secs:
+                    _wait = int(_cooldown_secs - (_now - _last_submit).total_seconds())
+                    st.warning(f"You just submitted a review. Please wait {_wait} second{'s' if _wait != 1 else ''} before submitting again.")
+                elif check_recent_submission(fb_username.strip()):
+                    st.warning(
+                        f"A review from **{fb_username.strip()}** was already submitted in the last hour. "
+                        "Please wait before submitting another, or use a different name."
+                    )
+                else:
+                    try:
+                        submit_review(fb_username.strip(), fb_rating, fb_comment.strip() if fb_comment else None)
+                        st.session_state["_last_feedback_submit"] = _now
+                        st.session_state.show_goal_animation = True
+                        st.rerun()
+                    except Exception as ex:
+                        st.error("Could not save your review. Please try again.")
 
     st.divider()
 
@@ -821,48 +916,44 @@ if nav_page == "Feedback":
     rev_col1, rev_col2, rev_col3 = st.columns(3)
     total_count = len(all_reviews)
     avg_rating_fb = sum(r[1] for r in all_reviews) / total_count if total_count > 0 else 0
-    top_score_count = sum(1 for r in all_reviews if r[1] >= 90)
+    five_star_count = sum(1 for r in all_reviews if r[1] == 5)
     with rev_col1:
         st.metric("Total Reviews", total_count)
     with rev_col2:
         if total_count > 0:
-            st.metric("Average Score", f"{avg_rating_fb:.1f} / 100")
+            st.metric("Average Rating", f"{avg_rating_fb:.1f} / 5.0")
         else:
-            st.metric("Average Score", "N/A")
+            st.metric("Average Rating", "N/A")
     with rev_col3:
-        st.metric("90+ Scores", top_score_count)
+        st.metric("5-Star Reviews", five_star_count)
 
     if total_count > 0:
         st.divider()
+        rating_counts = {}
+        for r in all_reviews:
+            rating_counts[r[1]] = rating_counts.get(r[1], 0) + 1
         rc_col1, rc_col2 = st.columns(2)
         with rc_col1:
-            st.subheader("Score Distribution")
-            buckets = [
-                ("90-100 (Excellent)", 90, 100, "#2ecc71"),
-                ("70-89 (Good)", 70, 89, "#3498db"),
-                ("50-69 (Average)", 50, 69, "#f1c40f"),
-                ("30-49 (Below Avg)", 30, 49, "#e74c3c"),
-                ("1-29 (Poor)", 1, 29, "#c0392b"),
-            ]
+            st.subheader("Rating Distribution")
             rd_data = []
-            for label, lo, hi, _ in buckets:
-                count = sum(1 for r in all_reviews if lo <= r[1] <= hi)
-                rd_data.append({"Score Range": label, "Count": count})
+            for star in range(5, 0, -1):
+                count = rating_counts.get(star, 0)
+                pct = (count / total_count * 100) if total_count > 0 else 0
+                rd_data.append({"Rating": f"{star} Star{'s' if star > 1 else ''}", "Count": count, "Percentage": pct})
             rd_df = pd.DataFrame(rd_data)
-            bucket_colors = {b[0]: b[3] for b in buckets}
-            fig_rd = px.bar(rd_df, x="Count", y="Score Range", orientation="h", template="plotly_dark",
-                           color="Score Range", color_discrete_map=bucket_colors)
-            fig_rd.update_layout(height=250, showlegend=False,
-                                yaxis=dict(categoryorder="array", categoryarray=[b[0] for b in buckets]))
+            rating_colors = {"5 Stars": "#2ecc71", "4 Stars": "#3498db", "3 Stars": "#f1c40f", "2 Stars": "#e74c3c", "1 Star": "#c0392b"}
+            fig_rd = px.bar(rd_df, x="Count", y="Rating", orientation="h", template="plotly_dark",
+                           color="Rating", color_discrete_map=rating_colors)
+            fig_rd.update_layout(height=250, showlegend=False, yaxis=dict(categoryorder="array", categoryarray=[f"{s} Star{'s' if s > 1 else ''}" for s in range(5, 0, -1)]))
             st.plotly_chart(fig_rd, use_container_width=True)
 
         with rc_col2:
             st.subheader("Sentiment Breakdown")
-            positive = sum(1 for r in all_reviews if r[1] >= 70)
-            neutral = sum(1 for r in all_reviews if 40 <= r[1] < 70)
-            negative = sum(1 for r in all_reviews if r[1] < 40)
-            sent_df = pd.DataFrame({"Sentiment": ["Positive (70-100)", "Neutral (40-69)", "Negative (1-39)"], "Count": [positive, neutral, negative]})
-            sent_colors = {"Positive (70-100)": "#2ecc71", "Neutral (40-69)": "#f1c40f", "Negative (1-39)": "#e74c3c"}
+            positive = sum(1 for r in all_reviews if r[1] >= 4)
+            neutral = sum(1 for r in all_reviews if r[1] == 3)
+            negative = sum(1 for r in all_reviews if r[1] <= 2)
+            sent_df = pd.DataFrame({"Sentiment": ["Positive (4-5)", "Neutral (3)", "Negative (1-2)"], "Count": [positive, neutral, negative]})
+            sent_colors = {"Positive (4-5)": "#2ecc71", "Neutral (3)": "#f1c40f", "Negative (1-2)": "#e74c3c"}
             fig_sent = px.pie(sent_df, values="Count", names="Sentiment", template="plotly_dark",
                              color="Sentiment", color_discrete_map=sent_colors)
             fig_sent.update_layout(height=250)
@@ -874,13 +965,12 @@ if nav_page == "Feedback":
 
         filter_col1, filter_col2 = st.columns([1, 3])
         with filter_col1:
-            filter_rating = st.selectbox("Filter by score", ["All", "90-100 (Excellent)", "70-89 (Good)", "50-69 (Average)", "30-49 (Below Avg)", "1-29 (Poor)"])
+            filter_rating = st.selectbox("Filter by rating", ["All", "5 Stars", "4 Stars", "3 Stars", "2 Stars", "1 Star"])
 
         filtered_reviews = all_reviews
         if filter_rating != "All":
-            _ranges = {"90-100 (Excellent)": (90, 100), "70-89 (Good)": (70, 89), "50-69 (Average)": (50, 69), "30-49 (Below Avg)": (30, 49), "1-29 (Poor)": (1, 29)}
-            lo, hi = _ranges[filter_rating]
-            filtered_reviews = [r for r in all_reviews if lo <= r[1] <= hi]
+            filter_val = int(filter_rating[0])
+            filtered_reviews = [r for r in all_reviews if r[1] == filter_val]
 
         if filtered_reviews:
             st.caption(f"Showing {len(filtered_reviews)} review{'s' if len(filtered_reviews) != 1 else ''}")
@@ -905,10 +995,583 @@ if nav_page == "Feedback":
 
     st.stop()
 
+# ── AI Scout ─────────────────────────────────────────────────────────────────
+if nav_page == "AI Scout":
+    import base64
+    import openai
+
+    record_visit(st.session_state.session_id, "AI Scout")
+
+    _WEEKLY_LIMIT = 30
+
+    # ── Persistent UID via URL query param (survives refresh) ────────────────
+    _uid = st.query_params.get("uid", None)
+    if not _uid:
+        _uid = str(uuid.uuid4())
+        st.query_params["uid"] = _uid
+
+    # ── Week key: ISO week (Mon–Sun), UTC ────────────────────────────────────
+    def _current_week_key():
+        now_utc = datetime.utcnow()
+        iso = now_utc.isocalendar()
+        return f"{iso[0]}-W{iso[1]:02d}"
+
+    # ── DB helpers ───────────────────────────────────────────────────────────
+    def _get_scout_usage(uid):
+        try:
+            conn = get_db_conn()
+            cur = conn.cursor()
+            cur.execute("SELECT week_key, count FROM ai_scout_usage WHERE uid = %s", (uid,))
+            row = cur.fetchone()
+            cur.close()
+            conn.close()
+            if row:
+                return row[0], row[1]
+        except Exception:
+            pass
+        return _current_week_key(), 0
+
+    def _increment_scout_usage(uid, week_key):
+        try:
+            conn = get_db_conn()
+            cur = conn.cursor()
+            cur.execute(
+                """
+                INSERT INTO ai_scout_usage (uid, week_key, count, updated_at)
+                VALUES (%s, %s, 1, NOW())
+                ON CONFLICT (uid) DO UPDATE SET
+                    count = CASE
+                        WHEN ai_scout_usage.week_key = EXCLUDED.week_key
+                        THEN ai_scout_usage.count + 1
+                        ELSE 1
+                    END,
+                    week_key = EXCLUDED.week_key,
+                    updated_at = NOW()
+                """,
+                (uid, week_key),
+            )
+            conn.commit()
+            cur.close()
+            conn.close()
+        except Exception:
+            pass
+
+    def _friendly_ai_error(exc):
+        msg = str(exc).lower()
+        if "connection" in msg or "timeout" in msg or "unreachable" in msg or "name or service not known" in msg:
+            return (
+                "The AI service is temporarily unreachable — this is usually a brief network hiccup. "
+                "Please wait a moment and try again."
+            )
+        if "429" in msg or "rate_limit" in msg or "rate limit" in msg or "too many requests" in msg:
+            return (
+                "The AI service is very busy right now. Please wait a few seconds and try again — "
+                "your message has not been counted against your weekly limit."
+            )
+        if "502" in msg or "503" in msg or "500" in msg or "bad gateway" in msg or "service unavailable" in msg:
+            return (
+                "The AI service is experiencing a temporary issue on our end. "
+                "Please try again in a minute."
+            )
+        if "401" in msg or "403" in msg or "unauthorized" in msg or "forbidden" in msg:
+            return "There's an authentication issue with the AI service. Please contact the dashboard owner."
+        if "model" in msg and ("not found" in msg or "does not exist" in msg):
+            return "The AI model is currently unavailable. Please try again later."
+        return (
+            "Something went wrong when reaching the AI. "
+            "Please try your question again — if the problem persists, come back in a few minutes."
+        )
+
+    def _search_football_context(query, max_snippets=8):
+        """Search the web for recent football context. Returns list of dicts with title/snippet/url."""
+        try:
+            from urllib.parse import quote as _quote, unquote as _unquote
+            yr = datetime.utcnow().year
+            search_q = _quote(f"{query} {yr}")
+            search_url = f"https://html.duckduckgo.com/html/?q={search_q}"
+            hdrs = {
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+                ),
+                "Accept-Language": "en-GB,en;q=0.9",
+            }
+            resp = requests.get(search_url, headers=hdrs, timeout=8)
+            soup_s = BeautifulSoup(resp.text, "html.parser")
+            results = []
+            for result in soup_s.select(".result")[:max_snippets]:
+                title_el = result.select_one(".result__title")
+                snip_el  = result.select_one(".result__snippet")
+                url_el   = result.select_one(".result__url")
+                # Try to get the real URL from the title link
+                link_el  = result.select_one(".result__title a")
+                href = ""
+                if link_el and link_el.get("href"):
+                    raw = link_el["href"]
+                    # DuckDuckGo wraps urls as /l/?uddg=<encoded_url>
+                    if "uddg=" in raw:
+                        try:
+                            href = _unquote(raw.split("uddg=")[1].split("&")[0])
+                        except Exception:
+                            href = ""
+                    elif raw.startswith("http"):
+                        href = raw
+                displayed_url = url_el.get_text(strip=True) if url_el else href
+                title = title_el.get_text(separator=" ", strip=True) if title_el else ""
+                snip  = snip_el.get_text(separator=" ", strip=True)  if snip_el  else ""
+                if snip:
+                    results.append({
+                        "title": title,
+                        "snippet": snip,
+                        "url": href or displayed_url,
+                        "source": displayed_url or href,
+                    })
+            return results
+        except Exception:
+            return []
+
+    # ── Usage check ──────────────────────────────────────────────────────────
+    _week_key = _current_week_key()
+    _stored_week, _used_count = _get_scout_usage(_uid)
+    if _stored_week != _week_key:
+        _used_count = 0
+    _remaining = max(0, _WEEKLY_LIMIT - _used_count)
+
+    # ── OpenAI client ────────────────────────────────────────────────────────
+    _BASE_URL = os.environ.get("AI_INTEGRATIONS_OPENAI_BASE_URL", "")
+    _API_KEY  = os.environ.get("AI_INTEGRATIONS_OPENAI_API_KEY", "")
+    _MODEL    = "gpt-4.1"
+
+    if not _BASE_URL or not _API_KEY:
+        st.error("The AI service is not currently configured. Please check back later.")
+        st.stop()
+
+    _client = openai.OpenAI(base_url=_BASE_URL, api_key=_API_KEY)
+
+    if "ai_scout_messages" not in st.session_state:
+        st.session_state.ai_scout_messages = []
+    if "scout_image_data" not in st.session_state:
+        st.session_state.scout_image_data = None   # (bytes, mime, filename) or None
+    if "scout_upload_key" not in st.session_state:
+        st.session_state.scout_upload_key = 0      # increment to reset uploader
+
+    # ── CSS: style chat input + hide file uploader ───────────────────────────
+    st.markdown("""
+    <style>
+    /* Chat input: blue border, rounded, dark background */
+    [data-testid="stChatInput"] {
+        border: 1.5px solid #1E88E5 !important;
+        border-radius: 14px !important;
+        background: #111827 !important;
+        position: relative !important;
+        padding-left: 44px !important;
+    }
+    [data-testid="stChatInput"] textarea {
+        background: transparent !important;
+        font-size: 1rem !important;
+        transition: padding-top 0.15s;
+    }
+    /* Send button: blue square on the right */
+    [data-testid="stChatInputSubmitButton"] button {
+        background: #1E88E5 !important;
+        border-radius: 8px !important;
+        color: white !important;
+    }
+    /* File uploader: invisible 1×1px, stays in DOM for JS */
+    div[data-testid="stFileUploader"] {
+        position: fixed !important;
+        bottom: 2px !important; left: 2px !important;
+        width: 1px !important; height: 1px !important;
+        opacity: 0 !important;
+        overflow: visible !important;
+        z-index: 0 !important;
+        pointer-events: none !important;
+    }
+    div[data-testid="stFileUploader"] input[type="file"] {
+        pointer-events: auto !important;
+        width: 1px !important; height: 1px !important;
+    }
+    /* Error popup overlay */
+    #scout-error-overlay {
+        display: none;
+        position: fixed; inset: 0;
+        background: rgba(0,0,0,0.55);
+        z-index: 99999;
+        align-items: center; justify-content: center;
+    }
+    #scout-error-overlay.visible { display: flex; }
+    #scout-error-box {
+        background: #1e2433; border: 1px solid #ef5350;
+        border-radius: 14px; padding: 28px 32px; max-width: 340px;
+        text-align: center; color: #fff;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+    }
+    #scout-error-box h3 { color: #ef5350; margin: 0 0 12px; font-size: 1.1rem; }
+    #scout-error-box p  { margin: 0 0 18px; color: #ccc; font-size: 0.92rem; line-height: 1.5; }
+    #scout-error-box button {
+        background: #1E88E5; color: #fff; border: none;
+        border-radius: 8px; padding: 8px 28px;
+        font-size: 0.95rem; cursor: pointer;
+    }
+    </style>
+
+    <!-- Error popup for invalid file types -->
+    <div id="scout-error-overlay">
+      <div id="scout-error-box">
+        <h3>&#10060; Invalid file format</h3>
+        <p>That file type isn't supported.<br>Please use one of:<br>
+           <strong>PNG &nbsp;·&nbsp; JPG / JPEG &nbsp;·&nbsp; WebP</strong></p>
+        <button onclick="document.getElementById('scout-error-overlay').classList.remove('visible')">OK</button>
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ── JS via components.html — runs in same-origin iframe, can reach parent DOM ──
+    components.html("""
+    <script>
+    (function () {
+      var P = window.parent.document;
+
+      /* ── Show the error overlay ── */
+      function showError() {
+        var ov = P.getElementById('scout-error-overlay');
+        if (ov) ov.classList.add('visible');
+      }
+
+      /* ── Wire up file-input validation ── */
+      function setupValidation(inp) {
+        if (inp._scoutValidated) return;
+        inp._scoutValidated = true;
+        var VALID_TYPES = ['image/png','image/jpeg','image/webp'];
+        var VALID_EXTS  = ['.png','.jpg','.jpeg','.webp'];
+        inp.addEventListener('change', function (e) {
+          var file = e.target.files && e.target.files[0];
+          if (!file) return;
+          var ext = '.' + file.name.split('.').pop().toLowerCase();
+          if (!VALID_TYPES.includes(file.type) && !VALID_EXTS.includes(ext)) {
+            e.stopImmediatePropagation();
+            inp.value = '';
+            showError();
+          }
+        }, true); /* capture phase — fires before Streamlit's listener */
+      }
+
+      /* ── Main setup: + button, chip, validation ── */
+      function setup() {
+        var chatBox = P.querySelector('[data-testid="stChatInput"]');
+        if (!chatBox) return false;
+        chatBox.style.position = 'relative';
+
+        /* + button */
+        var btn = P.getElementById('scout-plus-btn');
+        if (!btn) {
+          btn = P.createElement('button');
+          btn.id    = 'scout-plus-btn';
+          btn.title = 'Attach image';
+          btn.textContent = '+';
+          btn.style.cssText =
+            'position:absolute;bottom:10px;left:10px;z-index:200;' +
+            'background:transparent;border:none;color:#9CA3AF;' +
+            'font-size:26px;font-weight:300;line-height:1;' +
+            'width:32px;height:32px;cursor:pointer;' +
+            'display:flex;align-items:center;justify-content:center;';
+          btn.onmouseenter = function(){ btn.style.color='#fff'; };
+          btn.onmouseleave = function(){ btn.style.color='#9CA3AF'; };
+          btn.onclick = function (e) {
+            e.preventDefault(); e.stopPropagation();
+            var inp = P.querySelector('input[type="file"]');
+            if (inp) { inp.click(); return; }
+            var fb = P.querySelector('[data-testid="stFileUploaderDropzone"] button');
+            if (fb) fb.click();
+          };
+        }
+        if (!chatBox.contains(btn)) chatBox.appendChild(btn);
+
+        /* File input validation */
+        var inp = P.querySelector('input[type="file"]');
+        if (inp) setupValidation(inp);
+
+        return true;
+      }
+
+      function retry(n) {
+        if (setup()) return;
+        if (n > 0) setTimeout(function () { retry(n - 1); }, 500);
+      }
+      retry(20);
+
+      /* Re-run setup after every Streamlit DOM update */
+      new MutationObserver(function () { setup(); })
+        .observe(P.body, { childList: true, subtree: true });
+    })();
+    </script>
+    """, height=0)
+
+    # ── Page header ───────────────────────────────────────────────────────────
+    st.title("AI Football Scout")
+    st.caption(
+        "Ask anything about football stats, tactics, or econometrics. "
+        "Use **+** to attach a screenshot for the AI to analyse."
+    )
+
+    if _remaining > 0:
+        st.info(
+            f"You have **{_remaining} of {_WEEKLY_LIMIT} messages** left this week. "
+            "Resets every **Sunday at 23:59 GMT**."
+        )
+    else:
+        st.warning(
+            f"You've used all **{_WEEKLY_LIMIT} messages** for this week. "
+            "Resets every **Sunday at 23:59 GMT**."
+        )
+
+    # ── Top toolbar: clear chat (small, unobtrusive) ──────────────────────────
+    if st.button("🗑️ Clear chat", key="scout_clear", help="Clear conversation"):
+        st.session_state.ai_scout_messages = []
+        st.session_state.scout_image_data  = None
+        st.session_state.scout_upload_key += 1
+        st.rerun()
+
+    # ── Attached image filename box (shown above chat history) ───────────────
+    if st.session_state.scout_image_data:
+        _fname = st.session_state.scout_image_data[2]
+        _fcol1, _fcol2 = st.columns([0.88, 0.12])
+        with _fcol1:
+            st.markdown(
+                f'<div style="'
+                f'background:#1a2035;border:1px solid rgba(30,136,229,0.45);'
+                f'border-radius:8px;padding:7px 12px;'
+                f'display:flex;align-items:center;gap:8px;'
+                f'font-size:0.82rem;color:#90CAF9;">'
+                f'&#128247; <span style="font-weight:500">{_fname}</span>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+        with _fcol2:
+            if st.button("✕", key="scout_rm", help="Remove image"):
+                st.session_state.scout_image_data = None
+                st.session_state.scout_upload_key += 1
+                st.rerun()
+
+    # ── Hidden Streamlit file uploader (JS + button triggers it) ─────────────
+    uploaded_image = st.file_uploader(
+        "img", type=["png", "jpg", "jpeg", "webp"],
+        key=f"scout_image_{st.session_state.scout_upload_key}",
+        label_visibility="collapsed",
+    )
+    if uploaded_image is not None:
+        uploaded_image.seek(0)
+        raw_bytes = uploaded_image.read()
+        mime = uploaded_image.type or "image/png"
+        name = uploaded_image.name
+        st.session_state.scout_image_data = (raw_bytes, mime, name)
+
+    # ── Message history (full width) ─────────────────────────────────────────
+    for msg in st.session_state.ai_scout_messages:
+        with st.chat_message(msg["role"]):
+            if msg.get("image_b64"):
+                st.image(
+                    base64.b64decode(msg["image_b64"]),
+                    width=280,
+                    caption="Attached image",
+                )
+            st.markdown(msg["content"])
+
+    # ── Chat input — main level so it sticks to the bottom ───────────────────
+    if _remaining > 0:
+        user_input = st.chat_input("Ask about stats, tactics, results, models…")
+    else:
+        user_input = None
+        st.chat_input("Weekly limit reached — resets Sunday 23:59 GMT", disabled=True)
+
+    if user_input:
+        img_data = st.session_state.scout_image_data  # (bytes, mime) or None
+
+        with st.chat_message("user"):
+            if img_data:
+                st.image(img_data[0], width=280, caption="Attached image")
+            st.markdown(user_input)
+
+        # Build API user content
+        if img_data:
+            b64_img = base64.b64encode(img_data[0]).decode("utf-8")
+            user_content = [
+                {"type": "text", "text": user_input},
+                {"type": "image_url", "image_url": {"url": f"data:{img_data[1]};base64,{b64_img}"}},
+            ]
+        else:
+            b64_img = None
+            user_content = user_input
+
+        # Store in history (include image b64 for display on rerun)
+        st.session_state.ai_scout_messages.append({
+            "role": "user",
+            "content": user_input,
+            "image_b64": b64_img,
+        })
+        # Clear attached image after sending
+        st.session_state.scout_image_data = None
+
+        with st.chat_message("assistant"):
+            # Step 1: fetch live web context — always search the user query,
+            # then add a targeted standings search if any major league is mentioned
+            with st.spinner("Searching for latest data…"):
+                web_snippets = _search_football_context(user_input)
+
+                _now = datetime.utcnow()
+                _yr  = _now.year
+                # Current split-season label (e.g. "2025-26") and calendar label
+                _split_season = f"{_yr - 1}-{str(_yr)[2:]}" if _now.month < 7 else f"{_yr}-{str(_yr + 1)[2:]}"
+                _cal_season   = str(_yr)
+
+                # Detect if the question touches league standings / positions
+                _standing_keywords = [
+                    "table", "standing", "position", "relegat", "top four", "top 4",
+                    "champion", "title", "europe", "european", "ucl", "top of",
+                    "bottom of", "how are", "where are", "season", "league",
+                    "premier league", "la liga", "bundesliga", "serie a", "ligue 1",
+                ]
+                _q_lower = user_input.lower()
+                _needs_standings = any(kw in _q_lower for kw in _standing_keywords)
+
+                if _needs_standings:
+                    # Work out which league the user is asking about
+                    _league_map = {
+                        "premier league": f"Premier League table {_split_season}",
+                        "la liga":        f"La Liga table {_split_season}",
+                        "bundesliga":     f"Bundesliga table {_split_season}",
+                        "serie a":        f"Serie A table {_split_season}",
+                        "ligue 1":        f"Ligue 1 table {_split_season}",
+                        "mls":            f"MLS standings {_cal_season}",
+                        "champions league": f"Champions League {_split_season} standings",
+                    }
+                    _bonus_query = None
+                    for _key, _q in _league_map.items():
+                        if _key in _q_lower:
+                            _bonus_query = _q
+                            break
+                    if not _bonus_query:
+                        # Generic fallback standings search
+                        _bonus_query = f"Premier League table {_split_season} current standings"
+                    extra = _search_football_context(_bonus_query, max_snippets=6)
+                    web_snippets = web_snippets + extra  # combine both result sets
+
+            # Step 2: build dynamic system prompt
+            _today_str = _now.strftime("%B %d, %Y")
+            dynamic_system = (
+                "You are an expert football (soccer) analyst, econometrics tutor, and helpful guide "
+                "embedded inside a Football Econometrics Dashboard covering 30 competitions worldwide.\n"
+                f"Today's date is {_today_str}. The current European club season is {_split_season}.\n\n"
+
+                "══ SITE NAVIGATION — HELP USERS FIND THINGS ══\n"
+                "This dashboard has two sections in the sidebar:\n"
+                "• Competition selector — choose any of 30 competitions (Premier League, La Liga, Bundesliga, "
+                "Serie A, Ligue 1, Champions League, World Cup, MLS, J1 League, and many more). "
+                "Grouped into Europe, UEFA Competitions, International, Middle East, Asia, Americas.\n"
+                "• Season selector — pick a season year (split-season leagues show e.g. 2023-24; "
+                "calendar-season leagues show a single year).\n\n"
+                "The main tabs for league competitions are:\n"
+                "1. League Table — standings for the selected season with points, GF, GA, GD.\n"
+                "2. Statistical Analysis — OLS regression models, correlation matrix, what drives points.\n"
+                "3. Visualizations — scatter plots, box plots, bar charts; download CSV.\n"
+                "4. Predictions & Insights — points predictor, weekly overperformers/underperformers, "
+                "title odds, best attack/defence, relegation watch, cross-league comparison.\n"
+                "5. Penalty Analysis — shot placement zones, Bayesian conversion model, "
+                "game-theory strategic adjustment, goalkeeper dive advice.\n"
+                "6. Team Insights — KPI overview, historical trends, benchmarking vs. champions, "
+                "strengths/weaknesses, tactical recommendations, top scorers.\n"
+                "7. League Comparisons — goals per match, defensive strength, competitiveness across all leagues.\n\n"
+                "Sidebar pages (top of sidebar):\n"
+                "• Dashboard — the main analysis app described above.\n"
+                "• Feedback — submit a star rating and review; view all public reviews and stats.\n"
+                "• Web Analytics — total visitors, daily traffic, most-visited pages.\n"
+                "• AI Scout — THIS page; the chat interface you are running in now.\n\n"
+                "IMAGE UPLOADS ARE SUPPORTED: Users can tap the '+' button inside the chat input "
+                "box to attach a football-related image (screenshot, tactics board, match data, etc.). "
+                "When an image is attached, analyse it and provide relevant football insights. "
+                "NEVER tell the user that image or file uploads are not supported — they are.\n"
+                "═════════════════════════════════════════════════\n\n"
+
+                "══ CRITICAL DATA RULES — READ BEFORE EVERY REPLY ══\n"
+                "1. NEVER state league standings, positions, relegation battles, top-four races, "
+                "title leaders, or recent match results from your training memory. Your training data "
+                "is YEARS out of date for these facts.\n"
+                "2. ONLY use the web search results below for any facts about: current standings, "
+                "relegation danger, European races, recent transfers, managerial changes, injuries, results.\n"
+                "3. If the web results do not contain a specific fact, say 'I don't have live data "
+                "on that right now — please check BBC Sport or the official league site for the "
+                f"latest {_split_season} standings.'\n"
+                "4. Do NOT blend training-data guesses with web facts. If uncertain, admit it.\n"
+                "══════════════════════════════════════════════════════\n\n"
+
+                "Explain concepts in plain, conversational English. Be helpful and encouraging. "
+                "When an image is attached, describe what you see and provide relevant football insights.\n\n"
+                "SOURCE CITATION RULE: At the end of every reply that uses web search results, include "
+                "a '**Sources**' section listing every source used. Format:\n"
+                "**Sources**\n1. [Title](URL)\n2. [Title](URL)\n"
+                "List ALL contributing sources. Omit the section only if zero web results were available."
+            )
+            if web_snippets:
+                dynamic_system += "\n\n=== LIVE WEB SEARCH RESULTS — USE THESE, NOT YOUR TRAINING MEMORY ===\n"
+                for i, s in enumerate(web_snippets, 1):
+                    title   = s.get("title", "")
+                    snippet = s.get("snippet", "")
+                    url     = s.get("url", "")
+                    label   = f"[{title}]" if title else ""
+                    src     = f" ({url})" if url else ""
+                    dynamic_system += f"{i}. {label}{src}: {snippet}\n"
+                dynamic_system += (
+                    "=== END OF LIVE RESULTS ===\n"
+                    "Base your answer ONLY on the above results for any factual claims. "
+                    "Cite every source you used under '**Sources**' at the end."
+                )
+            else:
+                dynamic_system += (
+                    "\n\nNo web results were retrieved for this query. "
+                    "Do NOT invent standings, positions, or recent results from memory. "
+                    "Tell the user you don't have live data and suggest they check BBC Sport or the official league site."
+                )
+
+            api_messages = [{"role": "system", "content": dynamic_system}]
+            for prev in st.session_state.ai_scout_messages[:-1]:
+                api_messages.append({"role": prev["role"], "content": prev["content"]})
+            api_messages.append({"role": "user", "content": user_content})
+
+            # Step 3: call the AI
+            with st.spinner("Thinking…"):
+                try:
+                    response = _client.chat.completions.create(
+                        model=_MODEL,
+                        messages=api_messages,
+                        max_completion_tokens=1024,
+                    )
+                    reply = response.choices[0].message.content
+                    _increment_scout_usage(_uid, _week_key)
+                except Exception as exc:
+                    reply = _friendly_ai_error(exc)
+            st.markdown(reply)
+
+        st.session_state.ai_scout_messages.append({"role": "assistant", "content": reply})
+
+    st.stop()
+
 record_visit(st.session_state.session_id, f"Dashboard - {selected_league}")
 
 st.title("Football Econometrics Dashboard")
 st.caption(f"A reproducible econometrics study of what statistically matters for success in the {selected_league} ({caption_range})")
+
+# ── Internal navigation / feature links (SEO + UX) ───────────────────────────
+st.markdown("""
+<nav aria-label="Feature navigation" style="margin:8px 0 18px 0;display:flex;flex-wrap:wrap;gap:10px;">
+  <a href="#league-table"         style="text-decoration:none;padding:5px 12px;border-radius:20px;background:rgba(255,255,255,0.07);color:#ccc;font-size:0.85rem;border:1px solid rgba(255,255,255,0.15);">📊 League Table</a>
+  <a href="#statistical-analysis" style="text-decoration:none;padding:5px 12px;border-radius:20px;background:rgba(255,255,255,0.07);color:#ccc;font-size:0.85rem;border:1px solid rgba(255,255,255,0.15);">📈 Statistical Analysis</a>
+  <a href="#visualizations"       style="text-decoration:none;padding:5px 12px;border-radius:20px;background:rgba(255,255,255,0.07);color:#ccc;font-size:0.85rem;border:1px solid rgba(255,255,255,0.15);">🗺️ Visualizations</a>
+  <a href="#predictions"          style="text-decoration:none;padding:5px 12px;border-radius:20px;background:rgba(255,255,255,0.07);color:#ccc;font-size:0.85rem;border:1px solid rgba(255,255,255,0.15);">🎯 Points Predictor</a>
+  <a href="#penalty-analysis"     style="text-decoration:none;padding:5px 12px;border-radius:20px;background:rgba(255,255,255,0.07);color:#ccc;font-size:0.85rem;border:1px solid rgba(255,255,255,0.15);">🥅 Penalty Analysis</a>
+  <a href="#team-insights"        style="text-decoration:none;padding:5px 12px;border-radius:20px;background:rgba(255,255,255,0.07);color:#ccc;font-size:0.85rem;border:1px solid rgba(255,255,255,0.15);">🔍 Team Insights</a>
+  <a href="#league-comparisons"   style="text-decoration:none;padding:5px 12px;border-radius:20px;background:rgba(255,255,255,0.07);color:#ccc;font-size:0.85rem;border:1px solid rgba(255,255,255,0.15);">🌍 League Comparisons</a>
+</nav>
+""", unsafe_allow_html=True)
 
 good_reviews = get_good_reviews()
 if good_reviews:
@@ -958,6 +1621,27 @@ def format_season_label(yr, season_type):
     return str(yr)
 
 
+def _requests_get_with_retry(url, headers, timeout=30, retries=3, backoff=2.0):
+    last_exc = None
+    for attempt in range(retries):
+        try:
+            response = requests.get(url, headers=headers, timeout=timeout)
+            response.raise_for_status()
+            return response
+        except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
+            last_exc = e
+            if attempt < retries - 1:
+                time.sleep(backoff * (2 ** attempt))
+        except requests.exceptions.HTTPError as e:
+            if e.response is not None and e.response.status_code in (429, 503, 502):
+                last_exc = e
+                if attempt < retries - 1:
+                    time.sleep(backoff * (2 ** attempt))
+            else:
+                raise
+    raise last_exc
+
+
 @st.cache_data(ttl=604800, show_spinner=False)
 def fetch_season_data(season_val, wiki_pattern, wiki_name, season_type):
     if wiki_pattern is None or wiki_name is None:
@@ -979,8 +1663,7 @@ def fetch_season_data(season_val, wiki_pattern, wiki_name, season_type):
         )
     }
 
-    response = requests.get(url, headers=headers, timeout=30)
-    response.raise_for_status()
+    response = _requests_get_with_retry(url, headers)
 
     tables = pd.read_html(StringIO(response.text))
 
@@ -1043,15 +1726,18 @@ def fetch_season_data(season_val, wiki_pattern, wiki_name, season_type):
 @st.cache_data(ttl=604800, show_spinner=False)
 def load_multi_season(start_year, end_year, wiki_pattern, wiki_name, season_type):
     frames = []
+    failed_years = []
     for yr in range(start_year, end_year + 1):
         try:
             df = fetch_season_data(yr, wiki_pattern, wiki_name, season_type)
             frames.append(df)
-        except Exception:
-            pass
+        except Exception as _ye:
+            err = str(_ye).lower()
+            if "404" not in err:
+                failed_years.append(yr)
     if frames:
-        return pd.concat(frames, ignore_index=True)
-    return pd.DataFrame()
+        return pd.concat(frames, ignore_index=True), failed_years
+    return pd.DataFrame(), failed_years
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -1197,8 +1883,7 @@ def scrape_penalty_takers(tm_slug, tm_code, season_id=None, is_cup=False):
             "Chrome/120.0.0.0 Safari/537.36"
         )
     }
-    response = requests.get(base_url, headers=headers, timeout=30)
-    response.raise_for_status()
+    response = _requests_get_with_retry(base_url, headers)
     soup = BeautifulSoup(response.text, "html.parser")
     tables = soup.find_all("table")
     if len(tables) < 2:
@@ -1248,8 +1933,7 @@ def scrape_penalty_goalkeepers(tm_slug, tm_code, season_id=None, is_cup=False):
             "Chrome/120.0.0.0 Safari/537.36"
         )
     }
-    response = requests.get(base_url, headers=headers, timeout=30)
-    response.raise_for_status()
+    response = _requests_get_with_retry(base_url, headers)
     soup = BeautifulSoup(response.text, "html.parser")
     tables = soup.find_all("table")
     if len(tables) < 2:
@@ -1547,7 +2231,7 @@ def load_multi_season_penalties(start_year, end_year, tm_slug, tm_code, has_gk_d
 
 
 @st.cache_data(ttl=604800, show_spinner=False)
-def load_alltime_taker_penalties(tm_slug, tm_code, start_year, season_type, is_cup=False):
+def load_alltime_taker_penalties(tm_slug, tm_code, start_year, season_type, is_cup=False, league_name=None):
     taker_frames = []
     for yr in range(start_year, CURRENT_SEASON_END + 1):
         try:
@@ -1559,6 +2243,16 @@ def load_alltime_taker_penalties(tm_slug, tm_code, start_year, season_type, is_c
             pass
 
     if not taker_frames:
+        if league_name:
+            fb_takers, _ = load_fallback_penalty_data(league_name)
+            if not fb_takers.empty:
+                fb_takers = fb_takers.copy()
+                if "Club" in fb_takers.columns and "Clubs" not in fb_takers.columns:
+                    fb_takers.rename(columns={"Club": "Clubs"}, inplace=True)
+                for col in ["Seasons", "First_Season", "Last_Season"]:
+                    if col not in fb_takers.columns:
+                        fb_takers[col] = "—"
+                return fb_takers
         return pd.DataFrame()
 
     all_takers = pd.concat(taker_frames, ignore_index=True)
@@ -1591,7 +2285,7 @@ def load_alltime_taker_penalties(tm_slug, tm_code, start_year, season_type, is_c
 
 
 @st.cache_data(ttl=604800, show_spinner=False)
-def load_alltime_gk_penalties(tm_slug, tm_code, start_year, season_type, is_cup=False):
+def load_alltime_gk_penalties(tm_slug, tm_code, start_year, season_type, is_cup=False, league_name=None):
     gk_frames = []
     for yr in range(start_year, CURRENT_SEASON_END + 1):
         try:
@@ -1603,6 +2297,16 @@ def load_alltime_gk_penalties(tm_slug, tm_code, start_year, season_type, is_cup=
             pass
 
     if not gk_frames:
+        if league_name:
+            _, fb_gks = load_fallback_penalty_data(league_name)
+            if not fb_gks.empty:
+                fb_gks = fb_gks.copy()
+                if "Club" in fb_gks.columns and "Clubs" not in fb_gks.columns:
+                    fb_gks.rename(columns={"Club": "Clubs"}, inplace=True)
+                for col in ["Seasons", "First_Season", "Last_Season", "Conceded"]:
+                    if col not in fb_gks.columns:
+                        fb_gks[col] = "—"
+                return fb_gks
         return pd.DataFrame()
 
     all_gks = pd.concat(gk_frames, ignore_index=True)
@@ -1643,8 +2347,7 @@ def search_player_transfermarkt(query):
             "Chrome/120.0.0.0 Safari/537.36"
         )
     }
-    response = requests.get(url, headers=headers, timeout=30)
-    response.raise_for_status()
+    response = _requests_get_with_retry(url, headers)
     soup = BeautifulSoup(response.text, "html.parser")
     results = []
     seen_ids = set()
@@ -1676,8 +2379,7 @@ def scrape_player_career_penalties(player_slug, player_id):
             "Chrome/120.0.0.0 Safari/537.36"
         )
     }
-    response = requests.get(url, headers=headers, timeout=30)
-    response.raise_for_status()
+    response = _requests_get_with_retry(url, headers)
     soup = BeautifulSoup(response.text, "html.parser")
 
     total_scored = 0
@@ -1819,16 +2521,83 @@ ZONE_PROBS = {
 
 has_league_tables = league_cfg["wiki_pattern"] is not None and league_cfg.get("wiki_name") is not None
 
+_single_season_error = None
+_multi_season_error = None
+
 try:
     if has_league_tables:
         st.session_state["_data_loading"] = True
+        gps = league_cfg["games_per_season"]
         with st.spinner("Fetching league data..."):
-            single_season_raw = fetch_season_data(int(season), league_cfg["wiki_pattern"], league_cfg["wiki_name"], league_cfg["season_type"])
-            multi_season_raw = load_multi_season(season_range[0], season_range[1], league_cfg["wiki_pattern"], league_cfg["wiki_name"], league_cfg["season_type"])
-            gps = league_cfg["games_per_season"]
-            single_season = rebase_to_standard_season(single_season_raw, gps)
-            multi_season = rebase_to_standard_season(multi_season_raw, gps)
+            try:
+                single_season_raw = fetch_season_data(int(season), league_cfg["wiki_pattern"], league_cfg["wiki_name"], league_cfg["season_type"])
+                single_season = rebase_to_standard_season(single_season_raw, gps)
+            except Exception as _e:
+                _single_season_error = str(_e)
+                single_season = pd.DataFrame()
+            _multi_season_skipped = []
+            try:
+                multi_season_raw, _multi_season_skipped = load_multi_season(season_range[0], season_range[1], league_cfg["wiki_pattern"], league_cfg["wiki_name"], league_cfg["season_type"])
+                multi_season = rebase_to_standard_season(multi_season_raw, gps)
+            except Exception as _e:
+                _multi_season_error = str(_e)
+                multi_season = pd.DataFrame()
         st.session_state["_data_loading"] = False
+
+        def _friendly_scrape_error(raw_err: str) -> str:
+            e = raw_err.lower()
+            if "404" in e:
+                return "Wikipedia does not yet have a page for this season. It may not have started or been published yet."
+            if "429" in e or "rate" in e:
+                return "Wikipedia is temporarily rate-limiting requests. Please wait a minute and try again."
+            if "502" in e or "503" in e or "504" in e:
+                return "Wikipedia is temporarily unavailable (server error). Please try again in a few minutes."
+            if "connection" in e or "timeout" in e or "timed out" in e or "network" in e:
+                return "Could not reach Wikipedia — please check your internet connection and try again."
+            if "no table" in e or "no match" in e or "no season" in e or "no data" in e or "valueerror" in e:
+                return "Wikipedia has changed the layout of this season's page and the table could not be read. Cached data is shown below."
+            return f"An unexpected error occurred while loading data from Wikipedia: {raw_err}"
+
+        _using_fallback = False
+
+        if _single_season_error and single_season.empty and not multi_season.empty:
+            most_recent = multi_season["Season_End"].max() if "Season_End" in multi_season.columns else None
+            if most_recent is not None:
+                single_season = multi_season[multi_season["Season_End"] == most_recent].copy()
+            friendly = _friendly_scrape_error(_single_season_error)
+            st.error(f"**Live data unavailable.** {friendly}  \nShowing the most recent successfully-loaded season instead.")
+        elif _single_season_error and single_season.empty:
+            friendly = _friendly_scrape_error(_single_season_error)
+            fallback_df = load_fallback_data(selected_league)
+            if not fallback_df.empty:
+                single_season = fallback_df.copy()
+                _using_fallback = True
+                st.error(
+                    f"**Live data unavailable.** {friendly}  \n"
+                    f"Showing **cached 2023-24 season data** for {selected_league} — results may not reflect the current season."
+                )
+            else:
+                st.error(
+                    f"**Live data unavailable.** {friendly}  \n"
+                    f"No cached fallback is available for this competition. Please try again later."
+                )
+
+        if _multi_season_error and multi_season.empty:
+            if not _using_fallback:
+                friendly = _friendly_scrape_error(_multi_season_error)
+                st.warning(f"**Historical data unavailable.** {friendly}  \nSome analysis tabs may show limited results.")
+        elif _multi_season_skipped and not multi_season.empty:
+            def _season_label_for_yr(yr):
+                return format_season_label(yr, league_cfg["season_type"])
+            skipped_labels = [_season_label_for_yr(y) for y in _multi_season_skipped]
+            total_requested = season_range[1] - season_range[0] + 1
+            loaded_count = total_requested - len(_multi_season_skipped)
+            st.info(
+                f"Showing data for **{loaded_count} of {total_requested} seasons**. "
+                f"The following seasons could not be loaded and are excluded from analysis: "
+                f"{', '.join(skipped_labels)}."
+            )
+
         st.caption(f"**Last Updated:** {datetime.now().strftime('%d %b %Y, %H:%M:%S')}")
     else:
         single_season = pd.DataFrame()
@@ -1871,19 +2640,25 @@ try:
                 if overperformers:
                     overperformers.sort(key=lambda x: -x[3])
                     top = overperformers[0]
+                    _top_proj = round(top[1])
+                    _top_hist = round(top[2])
+                    _top_gap = _top_proj - _top_hist
                     hook_insights.append(
-                        f"**Biggest overperformer this season:** {top[0]} — on pace for **{top[1]:.0f} pts** "
-                        f"vs their historical average of {top[2]:.0f} pts (+{top[3]:.0f}). "
-                        f"{'Can they sustain it?' if top[3] > 10 else 'A solid step up.'}"
+                        f"**Biggest overperformer this season:** {top[0]} — on pace for **{_top_proj} pts** "
+                        f"vs their historical average of {_top_hist} pts (+{_top_gap}). "
+                        f"{'Can they sustain it?' if _top_gap > 10 else 'A solid step up.'}"
                     )
 
                 if underperformers:
                     underperformers.sort(key=lambda x: x[3])
                     bot = underperformers[0]
+                    _bot_proj = round(bot[1])
+                    _bot_hist = round(bot[2])
+                    _bot_gap = _bot_proj - _bot_hist
                     hook_insights.append(
-                        f"**Biggest underperformer:** {bot[0]} — projected for **{bot[1]:.0f} pts** "
-                        f"vs historical average {bot[2]:.0f} ({bot[3]:.0f}). "
-                        f"{'Crisis mode.' if bot[3] < -15 else 'A season to forget.'}"
+                        f"**Biggest underperformer:** {bot[0]} — projected for **{_bot_proj} pts** "
+                        f"vs historical average {_bot_hist} ({_bot_gap:+d}). "
+                        f"{'Crisis mode.' if _bot_gap < -15 else 'A season to forget.'}"
                     )
 
                 champ_pts = completed.groupby("Season").apply(lambda g: g["Pts"].max())
@@ -1893,22 +2668,25 @@ try:
                     leader_pace = leader["_pts_pace"]
                     title_gap = leader_pace - avg_title
                     leader_name = leader.get("Squad", "Leader")
+                    _lp = round(leader_pace)
+                    _at = round(avg_title)
+                    _tgap = _lp - _at
                     if title_gap > 5:
                         hook_insights.append(
-                            f"**Title odds swing:** {leader_name} is on pace for **{leader_pace:.0f} pts** — "
-                            f"that's {title_gap:.0f} points above the historical title-winning average ({avg_title:.0f}). "
+                            f"**Title odds swing:** {leader_name} is on pace for **{_lp} pts** — "
+                            f"that's {_tgap} points above the historical title-winning average ({_at}). "
                             f"Dominant season in the making."
                         )
                     elif title_gap < -5:
                         hook_insights.append(
                             f"**Title race wide open:** {leader_name} leads but is on pace for just "
-                            f"**{leader_pace:.0f} pts** — below the typical title-winning average of {avg_title:.0f}. "
+                            f"**{_lp} pts** — {abs(_tgap)} below the typical title-winning average of {_at}. "
                             f"Anyone's season."
                         )
                     else:
                         hook_insights.append(
                             f"**Title race:** {leader_name} tracks the historical title pace "
-                            f"({leader_pace:.0f} pts projected vs {avg_title:.0f} avg). Tight at the top."
+                            f"({_lp} pts projected vs {_at} avg). Tight at the top."
                         )
 
             if len(current_df) >= 2 and has_pts:
@@ -2145,6 +2923,39 @@ try:
             )
             st.plotly_chart(fig_corr, use_container_width=True)
 
+            if "GD" in corr_matrix.columns and "Pts" in corr_matrix.columns:
+                gd_pts = corr_matrix.loc["GD", "Pts"]
+                gf_pts = corr_matrix.loc["GF", "Pts"] if "GF" in corr_matrix.columns else None
+                ga_pts = corr_matrix.loc["GA", "Pts"] if "GA" in corr_matrix.columns else None
+                _corr_lines = []
+                if gd_pts is not None:
+                    _corr_lines.append(
+                        f"- **Goal Difference vs Points** (r = {gd_pts:.2f}): "
+                        + ("Extremely strong — the more goals a team scores *relative to those conceded*, the more points they almost always get." if gd_pts >= 0.9
+                           else "Strong — goal difference is a reliable indicator of points." if gd_pts >= 0.75
+                           else "Moderate — goal difference is related to points but other factors also matter.")
+                    )
+                if gf_pts is not None:
+                    _corr_lines.append(
+                        f"- **Goals Scored vs Points** (r = {gf_pts:.2f}): "
+                        + ("Very strong — scoring lots of goals is closely tied to winning points." if gf_pts >= 0.8
+                           else "Moderate — scoring goals helps, but it doesn't guarantee points on its own." if gf_pts >= 0.5
+                           else "Weak — in this league, points come from more than just scoring goals.")
+                    )
+                if ga_pts is not None:
+                    _corr_lines.append(
+                        f"- **Goals Conceded vs Points** (r = {ga_pts:.2f}): "
+                        + ("Very strong negative — teams that concede a lot consistently end up with few points." if ga_pts <= -0.8
+                           else "Moderate negative — conceding fewer goals tends to mean more points." if ga_pts <= -0.5
+                           else "Weak negative — in this league, conceding doesn't damage points as much as you might expect.")
+                    )
+                st.info(
+                    "**What does this chart tell us — in plain English?**\n\n"
+                    + "\n".join(_corr_lines)
+                    + "\n\n*Hover over any cell for the exact value. "
+                    "Darker blue = strong positive link; darker red = strong negative link; white = no relationship.*"
+                )
+
             with st.expander("Formula: Pearson Correlation Coefficient", expanded=False):
                 st.latex(r"r_{xy} = \frac{\sum_{i=1}^{n}(x_i - \bar{x})(y_i - \bar{y})}{\sqrt{\sum_{i=1}^{n}(x_i - \bar{x})^2 \;\cdot\; \sum_{i=1}^{n}(y_i - \bar{y})^2}}")
                 st.markdown(
@@ -2162,10 +2973,13 @@ try:
 
             st.divider()
             st.subheader("OLS Regression: What Predicts League Points?")
-            st.markdown(
-                "**What is OLS Regression?** It's a statistical method that finds the best-fit "
-                "formula to predict one thing (Points) from other things (Goals Scored, Goals Conceded). "
-                "Think of it like finding the recipe: how much does each ingredient contribute to the final result?"
+            st.info(
+                "**What is OLS? (Ordinary Least Squares)**\n\n"
+                "Imagine drawing the single best straight line through a cloud of dots on a graph — "
+                "that's essentially what OLS does. It looks at *every* season in the data (from the very first to the most recent) "
+                "and treats them all as equally important. It finds the formula that is, on average, closest to all the data points.\n\n"
+                "**In plain English:** OLS answers the question — *across all seasons ever played, how many extra points does a team "
+                "earn for each additional goal scored, and how many points do they lose for each goal conceded?*"
             )
 
             with st.expander("Formula: OLS Regression", expanded=False):
@@ -2336,6 +3150,15 @@ try:
 
         with tab3:
             st.subheader("Exploratory Visualizations")
+            st.info(
+                "**How to read these charts:**\n\n"
+                "Each dot represents one team in one season. The **diagonal line** (trendline) shows the overall pattern — "
+                "whether teams that score more goals (or concede fewer) tend to finish with more points.\n\n"
+                "- **Steeper upward line** = stronger relationship between that stat and points\n"
+                "- **Dots spread far from the line** = the relationship is noisy (other things also matter)\n"
+                "- **Dots clustered close to the line** = the stat is a reliable predictor of points\n\n"
+                "You can hover over any dot to see which team and season it represents."
+            )
 
             col_v1, col_v2 = st.columns(2)
 
@@ -2501,8 +3324,34 @@ try:
                         f"in the {recent_label} season."
                     )
 
+                _best_pi = pi_recent if has_recent_model else pi
+                st.info(
+                    f"**What do these numbers mean?**\n\n"
+                    f"The model predicts **{best_pred:.0f} points** for a team that scores {pred_gf} goals "
+                    f"and concedes {pred_ga}. Think of this as the most likely outcome based on historical patterns "
+                    f"in the {selected_league}.\n\n"
+                    f"The **95% Confidence Interval ({_best_pi[0]:.0f} – {_best_pi[1]:.0f} pts)** is the range "
+                    f"within which the actual points total would fall 19 times out of 20, given this goal record. "
+                    f"A wider range means the league has more unpredictability; a narrower range means "
+                    f"goals are a very reliable predictor of points in this competition.\n\n"
+                    f"*Note: this prediction assumes a full season of {gps} games played.*"
+                )
+
                 st.divider()
                 st.markdown("**Form-Weighted Model (Exponential Decay / WLS)**")
+                st.info(
+                    "**What is WLS? (Weighted Least Squares)**\n\n"
+                    "WLS works the same way as OLS — it still finds the best-fit formula — but instead of treating every season "
+                    "equally, it gives *more importance to recent seasons* and less to older ones. "
+                    "Think of it like asking a scout: *what matters in today's football?* not *what mattered on average across the last 30 years?*\n\n"
+                    "Here, each season back in time is worth 15% less than the one before it (λ = 0.85). So last season counts almost fully, "
+                    "five seasons ago counts about half as much, and seasons from 10+ years ago barely influence the result.\n\n"
+                    "**Why does this matter?** Modern football has changed — more goals are scored, tactics have evolved, and transfer fees "
+                    "have inflated. The WLS model captures *current* patterns rather than blending them with old ones.\n\n"
+                    "**OLS vs WLS at a glance:**\n"
+                    "- **OLS** = treats 1995 and 2024 the same — best for understanding long-run averages\n"
+                    "- **WLS** = weights 2024 much more than 1995 — best for predicting *today's* performance"
+                )
                 st.markdown(
                     "This model assigns **exponentially higher weight to recent seasons** (λ = 0.85 per season back) "
                     "so current tactical trends, transfer inflation, and competitive dynamics have more influence "
@@ -2686,8 +3535,12 @@ try:
             alltime_takers = load_alltime_taker_penalties(
                 league_cfg["tm_slug"], league_cfg["tm_code"],
                 league_cfg["start_year"], league_cfg["season_type"],
-                is_cup=league_cfg.get("is_cup", False)
+                is_cup=league_cfg.get("is_cup", False),
+                league_name=selected_league,
             )
+
+        if not alltime_takers.empty and "First_Season" in alltime_takers.columns and str(alltime_takers["First_Season"].iloc[0]) == "—":
+            st.info("Live data from Transfermarkt is currently unavailable. Showing cached penalty statistics.")
 
         if not alltime_takers.empty:
             takers_full = alltime_takers.copy()
@@ -2863,7 +3716,8 @@ try:
                 alltime_gks = load_alltime_gk_penalties(
                     league_cfg["tm_slug"], league_cfg["tm_code"],
                     league_cfg["start_year"], league_cfg["season_type"],
-                    is_cup=league_cfg.get("is_cup", False)
+                    is_cup=league_cfg.get("is_cup", False),
+                    league_name=selected_league,
                 )
 
             if not alltime_gks.empty:
@@ -4306,14 +5160,23 @@ try:
             else:
                 st.warning("Could not load cross-league comparison data. Please try again later.")
 
-except requests.exceptions.HTTPError:
-    if season is not None:
-        season_label = format_season_label(season, league_cfg["season_type"])
-        st.error(f"Could not fetch data for the {selected_league} {season_label} season. The page may not be available.")
+except requests.exceptions.HTTPError as e:
+    _status = e.response.status_code if e.response is not None else "unknown"
+    if _status == 404:
+        if season is not None:
+            season_label = format_season_label(season, league_cfg["season_type"])
+            st.warning(
+                f"The Wikipedia page for the {selected_league} {season_label} season could not be found. "
+                f"Try selecting a different season, or this season may not yet have a Wikipedia article."
+            )
+        else:
+            st.warning(f"Could not find data for the {selected_league}. Try another competition.")
+    elif _status in (429, 503):
+        st.warning("The data source is temporarily unavailable (rate limited or overloaded). Please try again in a moment.")
     else:
-        st.error(f"Could not fetch data for the {selected_league}.")
+        st.warning(f"Could not fetch data (HTTP {_status}). The page may have moved or be temporarily unavailable.")
 except Exception as e:
-    st.error(f"An error occurred: {e}")
+    st.warning(f"Something went wrong loading this league's data. Please try refreshing or selecting a different season. (Detail: {e})")
 
 st.divider()
 st.markdown(
