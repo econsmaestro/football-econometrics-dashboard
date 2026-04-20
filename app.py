@@ -1154,6 +1154,8 @@ if nav_page == "AI Scout":
         st.session_state.scout_image_data = None   # (bytes, mime, filename) or None
     if "scout_upload_key" not in st.session_state:
         st.session_state.scout_upload_key = 0      # increment to reset uploader
+    if "scout_thumb_b64" not in st.session_state:
+        st.session_state.scout_thumb_b64 = ""      # JPEG thumbnail base64 for JS preview
 
     # ── CSS: style chat input + hide file uploader ───────────────────────────
     st.markdown("""
@@ -1238,34 +1240,73 @@ if nav_page == "AI Scout":
         if (ov) ov.classList.add('visible');
       }
 
-      /* ── Update filename chip inside the chat box ── */
-      function updateChip(chatBox) {
+      /* ── Thumbnail preview card (floats above chat input) ── */
+      function updatePreviewCard() {
         var fnameEl = P.getElementById('scout-fname');
+        var thumbEl = P.getElementById('scout-thumb');
         var fname   = fnameEl ? fnameEl.textContent.trim() : '';
-        var chip    = P.getElementById('scout-file-chip');
+        var thumb   = thumbEl ? thumbEl.textContent.trim() : '';
+        var card    = P.getElementById('scout-preview-card');
 
         if (fname) {
-          if (!chip) {
-            chip = P.createElement('div');
-            chip.id = 'scout-file-chip';
-            chip.style.cssText =
-              'position:absolute;top:8px;left:44px;right:54px;' +
-              'background:rgba(30,136,229,0.18);' +
-              'border:1px solid rgba(30,136,229,0.5);' +
-              'border-radius:16px;padding:3px 12px;' +
-              'font-size:0.8rem;color:#90CAF9;' +
-              'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;' +
-              'z-index:150;pointer-events:none;';
+          /* Build or reuse the card */
+          if (!card) {
+            card = P.createElement('div');
+            card.id = 'scout-preview-card';
+            card.style.cssText =
+              'position:fixed;bottom:72px;left:16px;' +
+              'background:#1a2035;border:1px solid rgba(30,136,229,0.5);' +
+              'border-radius:12px;overflow:hidden;' +
+              'display:flex;align-items:stretch;' +
+              'box-shadow:0 4px 20px rgba(0,0,0,0.5);' +
+              'z-index:9990;max-width:220px;';
+            P.body.appendChild(card);
           }
-          chip.textContent = '\uD83D\uDCCE ' + fname;
-          if (!chatBox.contains(chip)) chatBox.insertBefore(chip, chatBox.firstChild);
-          /* Push textarea down so chip doesn't overlap text */
-          var ta = chatBox.querySelector('textarea');
-          if (ta) ta.style.paddingTop = '30px';
+
+          /* Thumbnail image (left side) */
+          var imgSrc = thumb
+            ? 'data:image/jpeg;base64,' + thumb
+            : '';
+          var imgHtml = imgSrc
+            ? '<img src="' + imgSrc + '" style="width:72px;height:72px;object-fit:cover;flex-shrink:0;display:block;">'
+            : '<div style="width:72px;height:72px;background:#223;display:flex;align-items:center;justify-content:center;font-size:28px;flex-shrink:0;">&#128247;</div>';
+
+          /* Filename label (right side) */
+          var label =
+            '<div style="padding:8px 32px 8px 10px;display:flex;align-items:center;' +
+            'font-size:0.78rem;color:#90CAF9;word-break:break-all;line-height:1.3;max-width:120px;">' +
+            '\uD83D\uDCCE ' + fname + '</div>';
+
+          /* × close button (top-right) */
+          var closeBtn =
+            '<button id="scout-close-btn" title="Remove" style="' +
+            'position:absolute;top:4px;right:4px;' +
+            'background:rgba(0,0,0,0.55);color:#fff;border:none;' +
+            'border-radius:50%;width:22px;height:22px;font-size:14px;' +
+            'line-height:1;cursor:pointer;display:flex;align-items:center;' +
+            'justify-content:center;z-index:2;">&#215;</button>';
+
+          card.innerHTML = imgHtml + label + closeBtn;
+          card.style.position = 'fixed'; /* keep fixed after innerHTML reset */
+
+          /* Wire × → click the hidden Streamlit remove button */
+          var xBtn = P.getElementById('scout-close-btn');
+          if (xBtn) {
+            xBtn.onclick = function (e) {
+              e.stopPropagation();
+              /* Find the Streamlit "✕ Remove attachment" button */
+              var stBtns = P.querySelectorAll('button');
+              for (var i = 0; i < stBtns.length; i++) {
+                if (stBtns[i].textContent.indexOf('Remove attachment') !== -1) {
+                  stBtns[i].click(); return;
+                }
+              }
+              /* Fallback: just hide the card visually */
+              card.remove();
+            };
+          }
         } else {
-          if (chip) chip.remove();
-          var ta = chatBox.querySelector('textarea');
-          if (ta) ta.style.paddingTop = '';
+          if (card) card.remove();
         }
       }
 
@@ -1322,8 +1363,8 @@ if nav_page == "AI Scout":
         var inp = P.querySelector('input[type="file"]');
         if (inp) setupValidation(inp);
 
-        /* Filename chip */
-        updateChip(chatBox);
+        /* Thumbnail preview card (floats above chat input) */
+        updatePreviewCard();
 
         return true;
       }
@@ -1366,15 +1407,20 @@ if nav_page == "AI Scout":
         st.session_state.scout_upload_key += 1
         st.rerun()
 
-    # ── Pass filename to JS via hidden element; ✕ button below ──────────────
+    # ── Pass image data to JS via hidden elements ─────────────────────────────
     _fname_for_js = st.session_state.scout_image_data[2] if st.session_state.scout_image_data else ""
+    _thumb_for_js = st.session_state.scout_thumb_b64 if st.session_state.scout_image_data else ""
     st.markdown(
-        f'<div id="scout-fname" style="display:none">{_fname_for_js}</div>',
+        f'<div id="scout-fname" style="display:none">{_fname_for_js}</div>'
+        f'<div id="scout-thumb" style="display:none">{_thumb_for_js}</div>',
         unsafe_allow_html=True,
     )
+    # Hidden remove button — JS thumbnail card's × will click this
     if st.session_state.scout_image_data:
-        if st.button("✕ Remove attachment", key="scout_rm", help="Clear uploaded image"):
+        if st.button("✕ Remove attachment", key="scout_rm",
+                     help="Clear uploaded image"):
             st.session_state.scout_image_data  = None
+            st.session_state.scout_thumb_b64   = ""
             st.session_state.scout_upload_key += 1
             st.rerun()
 
@@ -1386,11 +1432,22 @@ if nav_page == "AI Scout":
     )
     if uploaded_image is not None:
         uploaded_image.seek(0)
-        st.session_state.scout_image_data = (
-            uploaded_image.read(),
-            uploaded_image.type or "image/png",
-            uploaded_image.name,
-        )
+        raw_bytes = uploaded_image.read()
+        mime = uploaded_image.type or "image/png"
+        name = uploaded_image.name
+        # Generate a compact thumbnail for the JS preview card
+        try:
+            from PIL import Image as _PILImage
+            import io as _io
+            _img = _PILImage.open(_io.BytesIO(raw_bytes))
+            _img.thumbnail((120, 120))
+            _tbuf = _io.BytesIO()
+            _img.save(_tbuf, format="JPEG", quality=75)
+            _thumb_b64 = base64.b64encode(_tbuf.getvalue()).decode()
+        except Exception:
+            _thumb_b64 = ""
+        st.session_state.scout_image_data = (raw_bytes, mime, name)
+        st.session_state.scout_thumb_b64  = _thumb_b64
 
     # ── Message history (full width) ─────────────────────────────────────────
     for msg in st.session_state.ai_scout_messages:
