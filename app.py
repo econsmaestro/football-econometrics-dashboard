@@ -1135,134 +1135,132 @@ if nav_page == "AI Scout":
     if "ai_scout_messages" not in st.session_state:
         st.session_state.ai_scout_messages = []
     if "scout_image_data" not in st.session_state:
-        st.session_state.scout_image_data = None       # (bytes, mime, filename) or None
+        st.session_state.scout_image_data = None   # (bytes, mime, filename) or None
     if "scout_upload_key" not in st.session_state:
-        st.session_state.scout_upload_key = 0          # increment to reset uploader
+        st.session_state.scout_upload_key = 0      # increment to reset uploader
 
-    # ── CSS ───────────────────────────────────────────────────────────────────
+    # ── CSS: style chat input like reference + hide file uploader widget ──────
     st.markdown("""
     <style>
-    /* Scroll-to-top button fixed top-right */
-    #scout-scroll-top { position:fixed; top:70px; right:18px; z-index:9999; }
-    #scout-scroll-top button {
-        background:#1565C0; color:white; border:none; border-radius:50%;
-        width:36px; height:36px; font-size:15px; cursor:pointer;
-        box-shadow:0 2px 8px rgba(0,0,0,0.4);
+    /* ── Chat input: blue-bordered rounded box like reference design ── */
+    [data-testid="stChatInput"] {
+        border: 1.5px solid #1E88E5 !important;
+        border-radius: 14px !important;
+        background: #111827 !important;
+        padding-left: 44px !important;   /* room for the + button */
     }
-
-    /* File uploader: fixed bottom-left above chat bar */
-    div[data-testid="stFileUploader"] {
-        position: fixed !important;
-        bottom: 72px !important;
-        left: 14px !important;
-        z-index: 1000 !important;
-        width: auto !important;
+    [data-testid="stChatInput"] textarea {
         background: transparent !important;
+        font-size: 1rem !important;
     }
-    /* Hide outer label */
-    div[data-testid="stFileUploader"] > label { display:none !important; }
-    /* Remove section padding/border */
-    div[data-testid="stFileUploader"] section {
-        padding:0 !important; border:none !important; background:transparent !important;
+    /* Send button: blue square bottom-right */
+    [data-testid="stChatInputSubmitButton"] button {
+        background: #1E88E5 !important;
+        border-radius: 8px !important;
+        color: white !important;
     }
-    /* Hide drop-zone clutter (icon div, drag text, size note) — NOT the button */
-    [data-testid="stFileUploaderDropzone"] > div:first-child { display:none !important; }
-    [data-testid="stFileUploaderDropzone"] > span            { display:none !important; }
-    [data-testid="stFileUploaderDropzone"] > small           { display:none !important; }
-    [data-testid="stFileUploaderDropzone"] {
-        padding:0 !important; border:none !important;
-        background:transparent !important; min-height:0 !important;
-    }
-    /* Style Browse-files button as a 📎 circle */
-    [data-testid="stFileUploaderDropzone"] button {
-        background: rgba(255,255,255,0.1) !important;
-        border: 1.5px solid rgba(255,255,255,0.22) !important;
-        border-radius: 50% !important;
-        width: 42px !important; height: 42px !important;
-        padding: 0 !important; font-size: 0 !important;
-        cursor: pointer !important;
-        display: flex !important;
-        align-items: center !important; justify-content: center !important;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.3) !important;
-        transition: background 0.15s !important;
-    }
-    [data-testid="stFileUploaderDropzone"] button:hover {
-        background: rgba(255,255,255,0.2) !important;
-    }
-    [data-testid="stFileUploaderDropzone"] button::before {
-        content:"📎"; font-size:20px; line-height:1;
-    }
-    [data-testid="stFileUploaderDropzone"] button span { display:none !important; }
 
-    /* Filename chip shown above chatbox */
-    .scout-file-chip {
-        display:inline-flex; align-items:center; gap:6px;
-        background:rgba(21,101,192,0.25); border:1px solid rgba(21,101,192,0.5);
-        border-radius:16px; padding:4px 10px 4px 10px;
-        font-size:0.82rem; color:#90CAF9; margin-bottom:4px;
+    /* ── File uploader: shrink to invisible but keep input in DOM ── */
+    div[data-testid="stFileUploader"] {
+        position: absolute !important;
+        width: 1px !important; height: 1px !important;
+        overflow: hidden !important;
+        opacity: 0 !important;
+        pointer-events: none !important;
+        top: -9999px !important;
+    }
+    /* The actual <input type=file> must remain accessible for .click() */
+    div[data-testid="stFileUploader"] input[type="file"] {
+        pointer-events: auto !important;
+    }
+
+    /* ── Custom + button fixed bottom-left, inside chat bar area ── */
+    #scout-plus-btn {
+        position: fixed;
+        bottom: 17px; left: 16px;
+        z-index: 9999;
+        background: transparent;
+        border: none;
+        color: #9CA3AF;
+        font-size: 26px; font-weight: 300; line-height: 1;
+        width: 32px; height: 32px;
+        display: flex; align-items: center; justify-content: center;
+        cursor: pointer;
+        transition: color 0.15s;
+    }
+    #scout-plus-btn:hover { color: #fff; }
+
+    /* ── Filename chip ── */
+    .scout-chip {
+        display: inline-flex; align-items: center; gap: 8px;
+        background: rgba(30, 136, 229, 0.15);
+        border: 1px solid rgba(30, 136, 229, 0.4);
+        border-radius: 20px; padding: 5px 12px;
+        font-size: 0.83rem; color: #90CAF9;
+        margin: 6px 0;
     }
     </style>
-    <div id="scout-scroll-top">
-      <button onclick="window.scrollTo({top:0,behavior:'smooth'})" title="Scroll to top">&#8679;</button>
-    </div>
+
+    <!-- + button: JS clicks the hidden Streamlit file input -->
+    <button id="scout-plus-btn" title="Attach image"
+      onclick="(function(){
+        var inp = document.querySelector('input[type=file]');
+        if (inp) { inp.click(); return; }
+        var btn = document.querySelector('[data-testid=stFileUploaderDropzone] button');
+        if (btn) btn.click();
+      })()">+</button>
     """, unsafe_allow_html=True)
 
     # ── Page header ───────────────────────────────────────────────────────────
     st.title("AI Football Scout")
     st.caption(
-        "Ask anything about football stats, tactics, or econometrics — "
-        "tap 📎 (bottom-left) to attach a screenshot for the AI to analyse."
+        "Ask anything about football stats, tactics, or econometrics. "
+        "Use **+** to attach a screenshot for the AI to analyse."
     )
 
     if _remaining > 0:
         st.info(
             f"You have **{_remaining} of {_WEEKLY_LIMIT} messages** left this week. "
-            "Your allowance resets every **Sunday at 23:59 GMT**."
+            "Resets every **Sunday at 23:59 GMT**."
         )
     else:
         st.warning(
             f"You've used all **{_WEEKLY_LIMIT} messages** for this week. "
-            "Your allowance resets every **Sunday at 23:59 GMT** — come back then!"
+            "Resets every **Sunday at 23:59 GMT**."
         )
 
-    # ── Toolbar row: clear chat ───────────────────────────────────────────────
+    # ── Top toolbar: clear chat (small, unobtrusive) ──────────────────────────
     if st.button("🗑️ Clear chat", key="scout_clear", help="Clear conversation"):
         st.session_state.ai_scout_messages = []
         st.session_state.scout_image_data  = None
         st.session_state.scout_upload_key += 1
         st.rerun()
 
-    # ── Filename chip + remove button ─────────────────────────────────────────
+    # ── Filename chip + ✕ remove ──────────────────────────────────────────────
     if st.session_state.scout_image_data:
-        _fname = st.session_state.scout_image_data[2]   # filename stored at index 2
-        chip_col, remove_col = st.columns([8, 1])
-        with chip_col:
-            st.markdown(
-                f'<div class="scout-file-chip">📎 {_fname}</div>',
-                unsafe_allow_html=True,
-            )
-        with remove_col:
-            if st.button("✕", key="scout_remove_img", help="Remove attached image"):
+        _fname = st.session_state.scout_image_data[2]
+        _c1, _c2 = st.columns([9, 1])
+        with _c1:
+            st.markdown(f'<div class="scout-chip">📎 {_fname}</div>',
+                        unsafe_allow_html=True)
+        with _c2:
+            if st.button("✕", key="scout_rm", help="Remove image"):
                 st.session_state.scout_image_data  = None
-                st.session_state.scout_upload_key += 1   # resets the file uploader
+                st.session_state.scout_upload_key += 1
                 st.rerun()
 
-    # ── File uploader (styled as 📎 via CSS, fixed bottom-left) ──────────────
+    # ── Hidden Streamlit file uploader (JS + button triggers it) ─────────────
     uploaded_image = st.file_uploader(
-        "Attach image",
-        type=["png", "jpg", "jpeg", "webp"],
+        "img", type=["png", "jpg", "jpeg", "webp"],
         key=f"scout_image_{st.session_state.scout_upload_key}",
         label_visibility="collapsed",
-        help="Attach a screenshot for the AI to analyse",
     )
-
-    # Persist bytes + filename in session so they survive reruns
     if uploaded_image is not None:
         uploaded_image.seek(0)
         st.session_state.scout_image_data = (
             uploaded_image.read(),
             uploaded_image.type or "image/png",
-            uploaded_image.name,              # ← filename stored here
+            uploaded_image.name,
         )
 
     # ── Message history (full width) ─────────────────────────────────────────
