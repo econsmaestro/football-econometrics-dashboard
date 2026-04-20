@@ -527,13 +527,23 @@ for _cat in CATEGORY_ORDER:
 
 with st.sidebar:
     st.header("Navigation")
+
+    # ── Restore page from URL so reload keeps you on the same page ──
+    _PAGES = ["Dashboard", "Analytics", "Feedback", "AI Scout"]
+    _qp_page = st.query_params.get("page", "Dashboard")
+    _page_idx = _PAGES.index(_qp_page) if _qp_page in _PAGES else 0
+
     nav_page = st.radio(
         "Go to",
-        ["Dashboard", "Analytics", "Feedback", "AI Scout"],
-        index=0,
+        _PAGES,
+        index=_page_idx,
         key="nav_page",
         horizontal=True,
     )
+    # Keep URL in sync so reload restores this page
+    if st.query_params.get("page") != nav_page:
+        st.query_params["page"] = nav_page
+
     st.divider()
     st.header("Controls")
 
@@ -576,7 +586,12 @@ with st.sidebar:
 
     _is_loading = st.session_state.get("_data_loading", False)
 
-    selected_league = st.selectbox("Competition", LEAGUE_OPTIONS, index=0, format_func=_format_league, disabled=_is_loading)
+    # Restore league from URL query params
+    _qp_league = st.query_params.get("league", "Premier League")
+    _league_idx = LEAGUE_OPTIONS.index(_qp_league) if _qp_league in LEAGUE_OPTIONS else 0
+    selected_league = st.selectbox("Competition", LEAGUE_OPTIONS, index=_league_idx, format_func=_format_league, disabled=_is_loading)
+    if st.query_params.get("league") != selected_league:
+        st.query_params["league"] = selected_league
     league_cfg = LEAGUE_CONFIG[selected_league]
 
     _LOGO_OVERRIDES = {
