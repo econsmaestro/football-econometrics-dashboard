@@ -1322,44 +1322,13 @@ if nav_page == "AI Scout":
         border-radius: 8px !important;
         color: white !important;
     }
-    /* ── Uploader: hide everything except the button, show 📎 Attach ── */
-    div[data-testid="stFileUploaderDropzone"] {
-        background: transparent !important;
-        border: none !important;
-        padding: 0 !important;
-        min-height: 0 !important;
-    }
-    div[data-testid="stFileUploaderDropzone"] div,
-    div[data-testid="stFileUploaderDropzone"] section,
-    div[data-testid="stFileUploaderDropzone"] p,
-    div[data-testid="stFileUploaderDropzone"] small,
-    div[data-testid="stFileUploaderDropzone"] span {
-        display: none !important;
-    }
-    div[data-testid="stFileUploaderDropzone"] button {
-        background: rgba(30,136,229,0.1) !important;
-        border: 1.5px solid rgba(30,136,229,0.45) !important;
-        border-radius: 8px !important;
-        padding: 6px 14px !important;
-        cursor: pointer !important;
-        min-height: unset !important;
-        font-size: 0 !important;
-        color: transparent !important;
-    }
-    div[data-testid="stFileUploaderDropzone"] button::after {
-        content: "📎  Attach";
-        font-size: 0.9rem;
-        color: #1E88E5;
-        font-weight: 500;
-    }
-    div[data-testid="stFileUploader"] label { display: none !important; }
-    /* ── Sticky bottom controls row ── */
+    /* Sticky controls row (clear + attach) stays just above chat input */
     div[data-testid="stHorizontalBlock"]:has(div[data-testid="stFileUploader"]) {
         position: sticky !important;
         bottom: 76px !important;
         z-index: 100 !important;
         background: var(--background-color, #ffffff) !important;
-        padding: 6px 0 2px !important;
+        padding: 4px 0 !important;
         border-top: 1px solid rgba(0,0,0,0.06) !important;
     }
     /* Disclaimer below chatbox */
@@ -1440,10 +1409,9 @@ if nav_page == "AI Scout":
             st.rerun()
     with _bu:
         _new_upload = st.file_uploader(
-            "attach",
+            "📎 Attach image (PNG, JPG, WEBP)",
             type=["png", "jpg", "jpeg", "webp"],
             key=f"scout_img_{st.session_state.scout_upload_key}",
-            label_visibility="collapsed",
         )
         if _new_upload is not None:
             _new_upload.seek(0)
