@@ -1316,18 +1316,44 @@ if nav_page == "AI Scout":
     [data-testid="stChatInput"] {
         border: 1.5px solid #1E88E5 !important;
         border-radius: 14px !important;
-        background: #111827 !important;
-    }
-    [data-testid="stChatInput"] textarea {
-        background: transparent !important;
-        font-size: 1rem !important;
     }
     [data-testid="stChatInputSubmitButton"] button {
         background: #1E88E5 !important;
         border-radius: 8px !important;
         color: white !important;
     }
-    /* Sticky row: the columns block that contains the file uploader + clear button */
+    /* ── Uploader: hide everything except the button, show 📎 Attach ── */
+    div[data-testid="stFileUploaderDropzone"] {
+        background: transparent !important;
+        border: none !important;
+        padding: 0 !important;
+        min-height: 0 !important;
+    }
+    div[data-testid="stFileUploaderDropzone"] div,
+    div[data-testid="stFileUploaderDropzone"] section,
+    div[data-testid="stFileUploaderDropzone"] p,
+    div[data-testid="stFileUploaderDropzone"] small,
+    div[data-testid="stFileUploaderDropzone"] span {
+        display: none !important;
+    }
+    div[data-testid="stFileUploaderDropzone"] button {
+        background: rgba(30,136,229,0.1) !important;
+        border: 1.5px solid rgba(30,136,229,0.45) !important;
+        border-radius: 8px !important;
+        padding: 6px 14px !important;
+        cursor: pointer !important;
+        min-height: unset !important;
+        font-size: 0 !important;
+        color: transparent !important;
+    }
+    div[data-testid="stFileUploaderDropzone"] button::after {
+        content: "📎  Attach";
+        font-size: 0.9rem;
+        color: #1E88E5;
+        font-weight: 500;
+    }
+    div[data-testid="stFileUploader"] label { display: none !important; }
+    /* ── Sticky bottom controls row ── */
     div[data-testid="stHorizontalBlock"]:has(div[data-testid="stFileUploader"]) {
         position: sticky !important;
         bottom: 76px !important;
@@ -1336,44 +1362,15 @@ if nav_page == "AI Scout":
         padding: 6px 0 2px !important;
         border-top: 1px solid rgba(0,0,0,0.06) !important;
     }
-    /* Hide drag-and-drop instructions */
-    [data-testid="stFileUploaderDropzoneInstructions"] {
-        display: none !important;
-    }
-    div[data-testid="stFileUploaderDropzone"] {
-        background: rgba(30,136,229,0.08) !important;
-        border: 1px solid rgba(30,136,229,0.35) !important;
-        border-radius: 8px !important;
-        padding: 4px 12px !important;
-        min-height: unset !important;
-        width: fit-content !important;
-    }
-    div[data-testid="stFileUploaderDropzone"] button {
-        background: transparent !important;
-        border: none !important;
-        color: #1E88E5 !important;
-        font-size: 0.8rem !important;
-        padding: 2px 0 !important;
-        cursor: pointer !important;
-        min-height: unset !important;
-    }
-    div[data-testid="stFileUploaderDropzone"] button p { display: none !important; }
-    div[data-testid="stFileUploaderDropzone"] button::before {
-        content: "📎  Attach image";
-        font-size: 0.8rem;
-        color: #1E88E5;
-    }
-    /* Disclaimer below the chat input box */
+    /* Disclaimer below chatbox */
     section[data-testid="stBottom"]::after {
         content: "⚠️  AI-generated content — always verify facts from official sources before trusting AI.";
         display: block;
         font-size: 0.62rem;
         color: #9ca3af;
         text-align: center;
-        padding: 2px 16px 4px;
-        width: 100%;
+        padding: 2px 16px 5px;
     }
-    /* Extra bottom padding so sticky row is never hidden behind chat input */
     .main .block-container { padding-bottom: 140px !important; }
     </style>
     """, unsafe_allow_html=True)
@@ -1404,6 +1401,10 @@ if nav_page == "AI Scout":
             st.markdown(msg["content"])
 
     # ── Image chips ───────────────────────────────────────────────────────────
+    # Spacer pushes the controls row toward the chat input when no messages exist
+    if not st.session_state.ai_scout_messages:
+        st.markdown('<div style="min-height:38vh;"></div>', unsafe_allow_html=True)
+
     _remove_idx = None
     if st.session_state.scout_images:
         _outer_cols = st.columns(len(st.session_state.scout_images))
