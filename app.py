@@ -1321,49 +1321,42 @@ if nav_page == "AI Scout":
         border-radius: 8px !important;
         color: white !important;
     }
-    /* File uploader — shrink to a small icon circle */
-    div[data-testid="stFileUploader"] {
-        width: 46px !important;
-        background: transparent !important;
-        border: none !important;
-        padding: 0 !important;
-        margin: 0 !important;
+    /* Hide drag-and-drop instructions, keep only Browse button */
+    [data-testid="stFileUploaderDropzoneInstructions"] {
+        display: none !important;
     }
     div[data-testid="stFileUploaderDropzone"] {
-        background: rgba(30,136,229,0.12) !important;
-        border: 1.5px solid rgba(30,136,229,0.45) !important;
-        border-radius: 50% !important;
-        width: 42px !important;
-        height: 42px !important;
+        background: rgba(30,136,229,0.08) !important;
+        border: 1px solid rgba(30,136,229,0.35) !important;
+        border-radius: 8px !important;
+        padding: 4px 10px !important;
         min-height: unset !important;
-        padding: 0 !important;
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-        overflow: hidden !important;
-    }
-    div[data-testid="stFileUploaderDropzone"] > section,
-    div[data-testid="stFileUploaderDropzone"] > div:first-child,
-    div[data-testid="stFileUploaderDropzone"] small,
-    div[data-testid="stFileUploaderDropzone"] span {
-        display: none !important;
+        width: fit-content !important;
     }
     div[data-testid="stFileUploaderDropzone"] button {
         background: transparent !important;
         border: none !important;
-        padding: 0 !important;
-        margin: 0 !important;
-        min-height: unset !important;
-        width: 42px !important;
-        height: 42px !important;
-        font-size: 0 !important;
-        color: transparent !important;
+        color: #90CAF9 !important;
+        font-size: 0.75rem !important;
+        padding: 2px 0 !important;
         cursor: pointer !important;
+        min-height: unset !important;
     }
-    div[data-testid="stFileUploaderDropzone"] button::after {
-        content: "📎";
-        font-size: 20px;
+    div[data-testid="stFileUploaderDropzone"] button p {
+        display: none !important;
+    }
+    div[data-testid="stFileUploaderDropzone"] button::before {
+        content: "📎  Attach image";
+        font-size: 0.75rem;
         color: #90CAF9;
+    }
+    /* Chip X button — small and tight */
+    button[kind="secondary"][data-testid="baseButton-secondary"].chip-x {
+        padding: 0 4px !important;
+        font-size: 0.7rem !important;
+        min-height: unset !important;
+        height: 24px !important;
+        line-height: 1 !important;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -1400,32 +1393,36 @@ if nav_page == "AI Scout":
                 st.image(base64.b64decode(_b64), width=200)
             st.markdown(msg["content"])
 
-    # ── Image chips + 📎 icon uploader (above chat input) ────────────────────
+    # ── Image chips (filename left, ✕ right) + uploader ─────────────────────
     _remove_idx = None
     if st.session_state.scout_images:
-        _chip_cols = st.columns([0.85, 0.08] * len(st.session_state.scout_images))
+        # One outer column per image so chip+X stay on same row
+        _outer_cols = st.columns(len(st.session_state.scout_images))
         for _i, (_, _, _nm) in enumerate(st.session_state.scout_images):
-            _short = _nm if len(_nm) <= 18 else _nm[:15] + "…"
-            with _chip_cols[_i * 2]:
-                st.markdown(
-                    f'<div style="background:#1a2035;border:1px solid rgba(30,136,229,0.4);'
-                    f'border-radius:20px;padding:5px 10px;font-size:0.78rem;color:#90CAF9;'
-                    f'white-space:nowrap;overflow:hidden;">📷 <b>{_short}</b></div>',
-                    unsafe_allow_html=True,
-                )
-            with _chip_cols[_i * 2 + 1]:
-                if st.button("✕", key=f"rm_img_{_i}_{st.session_state.scout_upload_key}",
-                             help=f"Remove {_nm}"):
-                    _remove_idx = _i
+            _short = (_nm[:18] + "…") if len(_nm) > 18 else _nm
+            with _outer_cols[_i]:
+                _cc1, _cc2 = st.columns([0.84, 0.16])
+                with _cc1:
+                    st.markdown(
+                        f'<div style="background:#1a2035;border:1px solid rgba(30,136,229,0.4);'
+                        f'border-radius:20px;padding:4px 10px;font-size:0.75rem;color:#90CAF9;'
+                        f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'
+                        f'📷 <b>{_short}</b></div>',
+                        unsafe_allow_html=True,
+                    )
+                with _cc2:
+                    if st.button("✕", key=f"rm_img_{_i}_{st.session_state.scout_upload_key}",
+                                 help=f"Remove {_nm}"):
+                        _remove_idx = _i
 
     if _remove_idx is not None:
         st.session_state.scout_images.pop(_remove_idx)
         st.session_state.scout_upload_key += 1
         st.rerun()
 
-    # Small 📎 icon file uploader
+    # Compact "📎 Attach image" uploader
     _new_upload = st.file_uploader(
-        "📎",
+        "attach",
         type=["png", "jpg", "jpeg", "webp"],
         key=f"scout_img_{st.session_state.scout_upload_key}",
         label_visibility="collapsed",
