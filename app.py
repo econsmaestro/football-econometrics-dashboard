@@ -1035,11 +1035,17 @@ if nav_page == "AI Scout":
 
     _WEEKLY_LIMIT = 30
 
-    # ── Persistent UID via URL query param (survives refresh) ────────────────
-    _uid = st.query_params.get("uid", None)
-    if not _uid:
-        _uid = str(uuid.uuid4())
-        st.query_params["uid"] = _uid
+    # ── Persistent UID — session state survives rerun, query param survives refresh
+    if "scout_uid" not in st.session_state:
+        _uid = st.query_params.get("uid", None)
+        if not _uid:
+            _uid = str(uuid.uuid4())
+            st.query_params["uid"] = _uid
+        st.session_state.scout_uid = _uid
+    else:
+        _uid = st.session_state.scout_uid
+        if "uid" not in st.query_params:
+            st.query_params["uid"] = _uid
 
     # ── Week key: ISO week (Mon–Sun), UTC ────────────────────────────────────
     def _current_week_key():
@@ -1321,25 +1327,16 @@ if nav_page == "AI Scout":
         border-radius: 8px !important;
         color: white !important;
     }
-    /* ── File uploader: fixed to bottom-left, always visible ── */
-    div[data-testid="stFileUploader"] {
-        position: fixed !important;
-        bottom: 0 !important;
-        left: 0 !important;
-        z-index: 9999 !important;
-        display: flex !important;
-        align-items: center !important;
-        padding: 10px 8px 10px 14px !important;
-        height: 76px !important;
+    /* Sticky row: the columns block that contains the file uploader + clear button */
+    div[data-testid="stHorizontalBlock"]:has(div[data-testid="stFileUploader"]) {
+        position: sticky !important;
+        bottom: 76px !important;
+        z-index: 100 !important;
         background: var(--background-color, #ffffff) !important;
-        box-sizing: border-box !important;
-        border-top: 1px solid rgba(0,0,0,0.08) !important;
+        padding: 6px 0 2px !important;
+        border-top: 1px solid rgba(0,0,0,0.06) !important;
     }
-    /* Push chat input right so uploader doesn't cover it */
-    section[data-testid="stBottom"] > div {
-        padding-left: 80px !important;
-    }
-    /* Hide drag-and-drop instructions, show only the browse button */
+    /* Hide drag-and-drop instructions */
     [data-testid="stFileUploaderDropzoneInstructions"] {
         display: none !important;
     }
@@ -1347,7 +1344,7 @@ if nav_page == "AI Scout":
         background: rgba(30,136,229,0.08) !important;
         border: 1px solid rgba(30,136,229,0.35) !important;
         border-radius: 8px !important;
-        padding: 4px 10px !important;
+        padding: 4px 12px !important;
         min-height: unset !important;
         width: fit-content !important;
     }
@@ -1355,19 +1352,29 @@ if nav_page == "AI Scout":
         background: transparent !important;
         border: none !important;
         color: #1E88E5 !important;
-        font-size: 0.75rem !important;
+        font-size: 0.8rem !important;
         padding: 2px 0 !important;
         cursor: pointer !important;
         min-height: unset !important;
     }
-    div[data-testid="stFileUploaderDropzone"] button p {
-        display: none !important;
-    }
+    div[data-testid="stFileUploaderDropzone"] button p { display: none !important; }
     div[data-testid="stFileUploaderDropzone"] button::before {
-        content: "📎";
-        font-size: 1.3rem;
+        content: "📎  Attach image";
+        font-size: 0.8rem;
         color: #1E88E5;
     }
+    /* Disclaimer below the chat input box */
+    section[data-testid="stBottom"]::after {
+        content: "⚠️  AI-generated content — always verify facts from official sources before trusting AI.";
+        display: block;
+        font-size: 0.62rem;
+        color: #9ca3af;
+        text-align: center;
+        padding: 2px 16px 4px;
+        width: 100%;
+    }
+    /* Extra bottom padding so sticky row is never hidden behind chat input */
+    .main .block-container { padding-bottom: 140px !important; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -1389,13 +1396,6 @@ if nav_page == "AI Scout":
             "Resets every **Sunday at 23:59 GMT**."
         )
 
-    # ── Top toolbar: clear chat ───────────────────────────────────────────────
-    if st.button("🗑️ Clear chat", key="scout_clear", help="Clear conversation"):
-        st.session_state.ai_scout_messages = []
-        st.session_state.scout_images = []
-        st.session_state.scout_upload_key += 1
-        st.rerun()
-
     # ── Message history ───────────────────────────────────────────────────────
     for msg in st.session_state.ai_scout_messages:
         with st.chat_message(msg["role"]):
@@ -1403,10 +1403,9 @@ if nav_page == "AI Scout":
                 st.image(base64.b64decode(_b64), width=200)
             st.markdown(msg["content"])
 
-    # ── Image chips (filename left, ✕ right) + uploader ─────────────────────
+    # ── Image chips ───────────────────────────────────────────────────────────
     _remove_idx = None
     if st.session_state.scout_images:
-        # One outer column per image so chip+X stay on same row
         _outer_cols = st.columns(len(st.session_state.scout_images))
         for _i, (_, _, _nm) in enumerate(st.session_state.scout_images):
             _short = (_nm[:18] + "…") if len(_nm) > 18 else _nm
@@ -1424,25 +1423,33 @@ if nav_page == "AI Scout":
                     if st.button("✕", key=f"rm_img_{_i}_{st.session_state.scout_upload_key}",
                                  help=f"Remove {_nm}"):
                         _remove_idx = _i
-
     if _remove_idx is not None:
         st.session_state.scout_images.pop(_remove_idx)
         st.session_state.scout_upload_key += 1
         st.rerun()
 
-    # Compact "📎 Attach image" uploader
-    _new_upload = st.file_uploader(
-        "attach",
-        type=["png", "jpg", "jpeg", "webp"],
-        key=f"scout_img_{st.session_state.scout_upload_key}",
-        label_visibility="collapsed",
-    )
-    if _new_upload is not None:
-        _new_upload.seek(0)
-        _rb = _new_upload.read()
-        st.session_state.scout_images.append((_rb, _new_upload.type or "image/png", _new_upload.name))
-        st.session_state.scout_upload_key += 1
-        st.rerun()
+    # ── Sticky bottom row: 🗑️ Clear  |  📎 Attach  ───────────────────────────
+    # CSS :has(stFileUploader) makes this whole row sticky just above chat input
+    _bc, _bu = st.columns([0.13, 0.87])
+    with _bc:
+        if st.button("🗑️", key="scout_clear", help="Clear chat history"):
+            st.session_state.ai_scout_messages = []
+            st.session_state.scout_images = []
+            st.session_state.scout_upload_key += 1
+            st.rerun()
+    with _bu:
+        _new_upload = st.file_uploader(
+            "attach",
+            type=["png", "jpg", "jpeg", "webp"],
+            key=f"scout_img_{st.session_state.scout_upload_key}",
+            label_visibility="collapsed",
+        )
+        if _new_upload is not None:
+            _new_upload.seek(0)
+            _rb = _new_upload.read()
+            st.session_state.scout_images.append((_rb, _new_upload.type or "image/png", _new_upload.name))
+            st.session_state.scout_upload_key += 1
+            st.rerun()
 
     # ── Chat input ────────────────────────────────────────────────────────────
     if _remaining > 0:
@@ -1450,14 +1457,6 @@ if nav_page == "AI Scout":
     else:
         user_input = None
         st.chat_input("Weekly limit reached — resets Sunday 23:59 GMT", disabled=True)
-
-    st.markdown(
-        '<p style="font-size:0.72rem;color:#6b7280;text-align:center;margin-top:4px;">'
-        '⚠️ AI-generated content — responses may contain errors. '
-        'Always verify facts from official sources before trusting AI.'
-        '</p>',
-        unsafe_allow_html=True,
-    )
 
     if user_input:
         _imgs = list(st.session_state.scout_images)  # snapshot before clearing
