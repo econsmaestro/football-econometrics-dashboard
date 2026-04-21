@@ -24,9 +24,8 @@ st.set_page_config(
     layout="wide",
 )
 
-# ── SEO: inject meta description + Open Graph + Twitter Card into <head> ──────
-# JavaScript is needed because Streamlit only lets us write into <body>;
-# this script immediately appends the tags to the real <head> element.
+# ── SEO: inject meta tags + JSON-LD structured data into <head> ───────────────
+# JavaScript is needed because Streamlit only lets us write into <body>.
 _OG_URL   = "https://worf.replit.dev"
 _OG_TITLE = "Football Econometrics Dashboard"
 _OG_DESC  = (
@@ -35,23 +34,36 @@ _OG_DESC  = (
     "and econometrics for the Premier League, La Liga, Bundesliga and more."
 )
 _OG_IMAGE = f"{_OG_URL}/app/static/og-image.png"
+_OG_KEYWORDS = (
+    "football analytics, soccer statistics, Premier League stats, La Liga analysis, "
+    "Bundesliga table, Serie A regression, football econometrics, OLS regression football, "
+    "expected goals, xG model, penalty analysis, AI football scout, league table, "
+    "football data science, football predictions, team performance metrics, "
+    "Champions League statistics, football machine learning"
+)
 
 st.markdown(f"""
 <script>
 (function(){{
+  // ── meta tags ──
   var tags = [
-    {{name:"description", content:"{_OG_DESC}"}},
+    {{name:"description",  content:"{_OG_DESC}"}},
+    {{name:"keywords",     content:"{_OG_KEYWORDS}"}},
+    {{name:"author",       content:"Football Econometrics Dashboard"}},
     {{property:"og:type",        content:"website"}},
     {{property:"og:url",         content:"{_OG_URL}"}},
     {{property:"og:title",       content:"{_OG_TITLE}"}},
     {{property:"og:description", content:"{_OG_DESC}"}},
     {{property:"og:image",       content:"{_OG_IMAGE}"}},
+    {{property:"og:image:width",  content:"1200"}},
+    {{property:"og:image:height", content:"630"}},
+    {{property:"og:site_name",    content:"{_OG_TITLE}"}},
     {{name:"twitter:card",        content:"summary_large_image"}},
     {{name:"twitter:url",         content:"{_OG_URL}"}},
     {{name:"twitter:title",       content:"{_OG_TITLE}"}},
     {{name:"twitter:description", content:"{_OG_DESC}"}},
     {{name:"twitter:image",       content:"{_OG_IMAGE}"}},
-    {{name:"robots",  content:"index, follow"}},
+    {{name:"robots",      content:"index, follow, max-snippet:-1, max-image-preview:large"}},
     {{name:"theme-color", content:"#0e1117"}},
   ];
   tags.forEach(function(attrs){{
@@ -59,10 +71,111 @@ st.markdown(f"""
     Object.keys(attrs).forEach(function(k){{ el.setAttribute(k, attrs[k]); }});
     document.head.appendChild(el);
   }});
-  // Canonical link
+
+  // ── canonical + lang ──
   var link = document.createElement("link");
   link.rel = "canonical"; link.href = "{_OG_URL}";
   document.head.appendChild(link);
+  document.documentElement.setAttribute("lang", "en");
+
+  // ── sitemap reference ──
+  var smLink = document.createElement("link");
+  smLink.rel = "sitemap"; smLink.type = "application/xml";
+  smLink.title = "Sitemap"; smLink.href = "{_OG_URL}/app/static/sitemap.xml";
+  document.head.appendChild(smLink);
+
+  // ── JSON-LD: WebApplication ──
+  var appSchema = {{
+    "@context": "https://schema.org",
+    "@type": "WebApplication",
+    "name": "{_OG_TITLE}",
+    "url": "{_OG_URL}",
+    "description": "{_OG_DESC}",
+    "applicationCategory": "SportsApplication",
+    "operatingSystem": "Any",
+    "offers": {{
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "USD"
+    }},
+    "featureList": [
+      "Live league tables for 30 competitions",
+      "OLS regression statistical analysis",
+      "Penalty placement Bayesian model",
+      "AI Scout chatbot powered by GPT-4",
+      "Team insights and benchmarking",
+      "Cross-league comparisons",
+      "Points predictions and title odds"
+    ],
+    "screenshot": "{_OG_IMAGE}",
+    "author": {{
+      "@type": "Organization",
+      "name": "Football Econometrics Dashboard"
+    }}
+  }};
+  var appEl = document.createElement("script");
+  appEl.type = "application/ld+json";
+  appEl.text = JSON.stringify(appSchema);
+  document.head.appendChild(appEl);
+
+  // ── JSON-LD: FAQPage (common search questions) ──
+  var faqSchema = {{
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "mainEntity": [
+      {{
+        "@type": "Question",
+        "name": "How do I analyse Premier League statistics?",
+        "acceptedAnswer": {{
+          "@type": "Answer",
+          "text": "Select 'Premier League' from the competition dropdown, choose a season, and navigate to the Statistical Analysis tab for OLS regression models showing what drives points."
+        }}
+      }},
+      {{
+        "@type": "Question",
+        "name": "What does R-squared mean in football analytics?",
+        "acceptedAnswer": {{
+          "@type": "Answer",
+          "text": "R-squared measures how much of the variation in league points is explained by a statistical model (e.g. goals scored and conceded). A value of 0.90 means 90% of the points variation is captured."
+        }}
+      }},
+      {{
+        "@type": "Question",
+        "name": "Which football competitions does this dashboard cover?",
+        "acceptedAnswer": {{
+          "@type": "Answer",
+          "text": "The dashboard covers 30 competitions including the Premier League, La Liga, Bundesliga, Serie A, Ligue 1, Champions League, Europa League, World Cup, MLS, J1 League and more."
+        }}
+      }},
+      {{
+        "@type": "Question",
+        "name": "How do penalty conversion rates differ across leagues?",
+        "acceptedAnswer": {{
+          "@type": "Answer",
+          "text": "The Penalty Analysis tab uses a Bayesian model to estimate conversion rates by shot placement zone and provides game-theory strategic recommendations for penalty takers."
+        }}
+      }}
+    ]
+  }};
+  var faqEl = document.createElement("script");
+  faqEl.type = "application/ld+json";
+  faqEl.text = JSON.stringify(faqSchema);
+  document.head.appendChild(faqEl);
+
+  // ── JSON-LD: BreadcrumbList ──
+  var breadcrumbSchema = {{
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    "itemListElement": [
+      {{"@type":"ListItem","position":1,"name":"Home","item":"{_OG_URL}"}},
+      {{"@type":"ListItem","position":2,"name":"Dashboard","item":"{_OG_URL}/?page=dashboard"}},
+      {{"@type":"ListItem","position":3,"name":"AI Scout","item":"{_OG_URL}/?page=ai-scout"}}
+    ]
+  }};
+  var bcEl = document.createElement("script");
+  bcEl.type = "application/ld+json";
+  bcEl.text = JSON.stringify(breadcrumbSchema);
+  document.head.appendChild(bcEl);
 }})();
 </script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -631,6 +744,22 @@ with st.sidebar:
         f'</div>'
         f'<div style="font-size:0.85em;color:#888;margin-top:6px;">{selected_league}</div>'
         f'</div>',
+        unsafe_allow_html=True,
+    )
+
+    # Dynamic browser-tab title + meta description per competition
+    _dyn_title = f"{selected_league} Stats & Analysis | Football Econometrics Dashboard"
+    _dyn_desc  = (
+        f"Live league table, OLS regression, penalty analysis and AI Scout "
+        f"for the {selected_league}. Free football data science dashboard."
+    )
+    st.markdown(
+        f"<script>document.title={repr(_dyn_title)};"
+        f"var _dm=document.querySelector('meta[name=\"description\"]');"
+        f"if(_dm)_dm.setAttribute('content',{repr(_dyn_desc)});"
+        f"var _og=document.querySelector('meta[property=\"og:title\"]');"
+        f"if(_og)_og.setAttribute('content',{repr(_dyn_title)});"
+        f"</script>",
         unsafe_allow_html=True,
     )
 
@@ -1554,7 +1683,55 @@ if nav_page == "AI Scout":
                     "official league website. If web results partially support a claim, clearly flag what is confirmed "
                     "vs. what is uncertain. Prefer saying 'I cannot confirm this' over stating an unverified claim.\n"
                     "══════════════════════════════════════════════════════\n\n"
-                    "Explain concepts in plain, conversational English. Be helpful and encouraging. "
+                    "══ PLAIN-ENGLISH RULE — ALWAYS APPLY ══\n"
+                    "Many users have no maths or stats background. You MUST always explain every concept "
+                    "in plain, conversational English BEFORE (or instead of) using technical language.\n\n"
+                    "STRUCTURE every stats/maths explanation like this:\n"
+                    "1. One-sentence plain-English summary (what it means in football terms).\n"
+                    "2. A short real-world football analogy if it helps.\n"
+                    "3. The technical detail — only AFTER the plain version, and only if it adds value.\n"
+                    "Never lead with a formula or Greek letter. Never assume the user knows what a "
+                    "p-value, coefficient, or distribution is.\n\n"
+                    "SPECIFIC CONCEPT TRANSLATIONS — use these whenever these terms come up:\n"
+                    "• R-squared / R²: 'This tells us how much of a team's points total is explained by "
+                    "the stats in the model. For example, R² = 0.85 means 85% of why teams finish where "
+                    "they do is captured by goals scored and conceded — only 15% is down to other factors "
+                    "like luck or individual brilliance.'\n"
+                    "• Adjusted R-squared: 'The same as R², but it penalises the model for including "
+                    "variables that don't actually help. It's a stricter, fairer version of R².'\n"
+                    "• F-statistic / F-test: 'A sanity check — it asks \"is this model actually useful, "
+                    "or could we get the same result by random chance?\" A high F-statistic (and low "
+                    "p-value) means the model is genuinely picking up a real pattern, not just noise.'\n"
+                    "• p-value: 'The probability that a result happened by pure luck. p < 0.05 means "
+                    "there is less than a 5% chance the finding is a fluke — so we trust it.'\n"
+                    "• Coefficient: 'How much a stat moves the outcome. A coefficient of 2.3 on Goals "
+                    "Scored means every extra goal a team scores is associated with 2.3 more points over "
+                    "a season.'\n"
+                    "• OLS regression: 'A method that finds the best straight-line relationship between "
+                    "a set of stats (like goals and possession) and an outcome (like points). Think of it "
+                    "as drawing the best-fit line through a scatter plot.'\n"
+                    "• Correlation: 'How strongly two things move together. +1 means they always go up "
+                    "together; -1 means when one goes up the other goes down; 0 means no link.'\n"
+                    "• Standard error: 'A measure of how uncertain we are about a coefficient. A small "
+                    "standard error means the estimate is precise; a large one means it could vary a lot.'\n"
+                    "• Confidence interval: 'A range that almost certainly contains the true value. "
+                    "\"The effect is between 1.5 and 3.0 points\" means we are 95% sure the real "
+                    "answer sits in that range.'\n"
+                    "• Bayesian model: 'A model that starts with a prior belief (e.g. average penalty "
+                    "conversion is 75%) and then updates it based on actual data. The more data you "
+                    "feed in, the more the model trusts the data over the prior belief.'\n"
+                    "• Heteroskedasticity: 'When the scatter of data points around the trend line is "
+                    "uneven — bigger spread for some teams than others. It can make our uncertainty "
+                    "estimates slightly off, but it doesn't invalidate the model.'\n"
+                    "• Multicollinearity: 'When two stats in the model are so closely related (e.g. "
+                    "Goals For and xG) that it becomes hard to tell which one is really driving points. "
+                    "The model gets confused because the two variables are almost saying the same thing.'\n\n"
+                    "TONE RULE: Be warm, encouraging, and conversational. Treat users as intelligent "
+                    "people who simply haven't studied statistics — not as beginners who need dumbing "
+                    "down, but as curious fans who deserve a clear explanation. Use football examples "
+                    "wherever possible (teams, goals, points, leagues). Avoid walls of text — break "
+                    "explanations into short paragraphs or bullet points.\n"
+                    "══════════════════════════════════════════════════════\n\n"
                     "When an image is attached, describe what you see and provide relevant football insights.\n\n"
                     "SOURCE CITATION RULE: At the end of every reply that uses web search results, include "
                     "a '**Sources**' section listing every source used. Format:\n"
