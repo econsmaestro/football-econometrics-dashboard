@@ -1321,7 +1321,25 @@ if nav_page == "AI Scout":
         border-radius: 8px !important;
         color: white !important;
     }
-    /* Hide drag-and-drop instructions, keep only Browse button */
+    /* ── File uploader: fixed to bottom-left, always visible ── */
+    div[data-testid="stFileUploader"] {
+        position: fixed !important;
+        bottom: 0 !important;
+        left: 0 !important;
+        z-index: 9999 !important;
+        display: flex !important;
+        align-items: center !important;
+        padding: 10px 8px 10px 14px !important;
+        height: 76px !important;
+        background: var(--background-color, #ffffff) !important;
+        box-sizing: border-box !important;
+        border-top: 1px solid rgba(0,0,0,0.08) !important;
+    }
+    /* Push chat input right so uploader doesn't cover it */
+    section[data-testid="stBottom"] > div {
+        padding-left: 80px !important;
+    }
+    /* Hide drag-and-drop instructions, show only the browse button */
     [data-testid="stFileUploaderDropzoneInstructions"] {
         display: none !important;
     }
@@ -1336,7 +1354,7 @@ if nav_page == "AI Scout":
     div[data-testid="stFileUploaderDropzone"] button {
         background: transparent !important;
         border: none !important;
-        color: #90CAF9 !important;
+        color: #1E88E5 !important;
         font-size: 0.75rem !important;
         padding: 2px 0 !important;
         cursor: pointer !important;
@@ -1346,17 +1364,9 @@ if nav_page == "AI Scout":
         display: none !important;
     }
     div[data-testid="stFileUploaderDropzone"] button::before {
-        content: "📎  Attach image";
-        font-size: 0.75rem;
-        color: #90CAF9;
-    }
-    /* Chip X button — small and tight */
-    button[kind="secondary"][data-testid="baseButton-secondary"].chip-x {
-        padding: 0 4px !important;
-        font-size: 0.7rem !important;
-        min-height: unset !important;
-        height: 24px !important;
-        line-height: 1 !important;
+        content: "📎";
+        font-size: 1.3rem;
+        color: #1E88E5;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -1444,7 +1454,7 @@ if nav_page == "AI Scout":
     st.markdown(
         '<p style="font-size:0.72rem;color:#6b7280;text-align:center;margin-top:4px;">'
         '⚠️ AI-generated content — responses may contain errors. '
-        'Always verify facts from official sources before relying on them.'
+        'Always verify facts from official sources before trusting AI.'
         '</p>',
         unsafe_allow_html=True,
     )
