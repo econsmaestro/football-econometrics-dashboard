@@ -2,4 +2,4 @@ User-agent: *
 Allow: /
 
 # Sitemap
-Sitemap: https://worf.replit.dev/app/static/sitemap.xml
+Sitemap: https://football-stats-dashboard.replit.app/app/static/sitemap.xml

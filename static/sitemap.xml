@@ -1,18 +1,100 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+
+  <!-- Main dashboard -->
   <url>
-    <loc>https://worf.replit.dev/</loc>
+    <loc>https://football-stats-dashboard.replit.app/</loc>
     <changefreq>daily</changefreq>
     <priority>1.0</priority>
+    <lastmod>2026-04-21</lastmod>
+  </url>
+
+  <!-- Dashboard sections (query-param pages) -->
+  <url>
+    <loc>https://football-stats-dashboard.replit.app/?page=Dashboard</loc>
+    <changefreq>daily</changefreq>
+    <priority>0.9</priority>
+    <lastmod>2026-04-21</lastmod>
   </url>
   <url>
-    <loc>https://worf.replit.dev/?page=AI+Scout</loc>
+    <loc>https://football-stats-dashboard.replit.app/?page=AI+Scout</loc>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
+    <lastmod>2026-04-21</lastmod>
   </url>
   <url>
-    <loc>https://worf.replit.dev/?page=Feedback</loc>
+    <loc>https://football-stats-dashboard.replit.app/?page=Feedback</loc>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
+    <lastmod>2026-04-21</lastmod>
   </url>
+  <url>
+    <loc>https://football-stats-dashboard.replit.app/?page=Analytics</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.5</priority>
+    <lastmod>2026-04-21</lastmod>
+  </url>
+
+  <!-- Key league entry points -->
+  <url>
+    <loc>https://football-stats-dashboard.replit.app/?page=Dashboard&amp;league=Premier+League</loc>
+    <changefreq>daily</changefreq>
+    <priority>0.9</priority>
+    <lastmod>2026-04-21</lastmod>
+  </url>
+  <url>
+    <loc>https://football-stats-dashboard.replit.app/?page=Dashboard&amp;league=La+Liga</loc>
+    <changefreq>daily</changefreq>
+    <priority>0.9</priority>
+    <lastmod>2026-04-21</lastmod>
+  </url>
+  <url>
+    <loc>https://football-stats-dashboard.replit.app/?page=Dashboard&amp;league=Bundesliga</loc>
+    <changefreq>daily</changefreq>
+    <priority>0.8</priority>
+    <lastmod>2026-04-21</lastmod>
+  </url>
+  <url>
+    <loc>https://football-stats-dashboard.replit.app/?page=Dashboard&amp;league=Serie+A</loc>
+    <changefreq>daily</changefreq>
+    <priority>0.8</priority>
+    <lastmod>2026-04-21</lastmod>
+  </url>
+  <url>
+    <loc>https://football-stats-dashboard.replit.app/?page=Dashboard&amp;league=Ligue+1</loc>
+    <changefreq>daily</changefreq>
+    <priority>0.8</priority>
+    <lastmod>2026-04-21</lastmod>
+  </url>
+  <url>
+    <loc>https://football-stats-dashboard.replit.app/?page=Dashboard&amp;league=UEFA+Champions+League</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+    <lastmod>2026-04-21</lastmod>
+  </url>
+  <url>
+    <loc>https://football-stats-dashboard.replit.app/?page=Dashboard&amp;league=UEFA+Europa+League</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+    <lastmod>2026-04-21</lastmod>
+  </url>
+  <url>
+    <loc>https://football-stats-dashboard.replit.app/?page=Dashboard&amp;league=MLS</loc>
+    <changefreq>daily</changefreq>
+    <priority>0.7</priority>
+    <lastmod>2026-04-21</lastmod>
+  </url>
+  <url>
+    <loc>https://football-stats-dashboard.replit.app/?page=Dashboard&amp;league=Saudi+Pro+League</loc>
+    <changefreq>daily</changefreq>
+    <priority>0.7</priority>
+    <lastmod>2026-04-21</lastmod>
+  </url>
+  <url>
+    <loc>https://football-stats-dashboard.replit.app/?page=Dashboard&amp;league=FIFA+World+Cup</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+    <lastmod>2026-04-21</lastmod>
+  </url>
+
 </urlset>

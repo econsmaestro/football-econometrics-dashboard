@@ -19,40 +19,74 @@ from datetime import datetime, timedelta
 from models import load_fallback_data, load_fallback_penalty_data
 
 st.set_page_config(
-    page_title="Football Econometrics Dashboard",
+    page_title="Football Econometrics Dashboard | Stats, Tables & Analysis",
     page_icon="⚽",
     layout="wide",
 )
 
-# ── SEO: inject meta description + Open Graph + Twitter Card into <head> ──────
+# ── SEO: inject meta tags, Open Graph, Twitter Card, JSON-LD into <head> ──────
 # JavaScript is needed because Streamlit only lets us write into <body>;
 # this script immediately appends the tags to the real <head> element.
-_OG_URL   = "https://worf.replit.dev"
-_OG_TITLE = "Football Econometrics Dashboard"
+_OG_URL   = "https://football-stats-dashboard.replit.app"
+_OG_TITLE = "Football Econometrics Dashboard | Football Stats, League Tables & Analysis"
 _OG_DESC  = (
-    "Analyse 30 football competitions worldwide — live league tables, "
-    "OLS regression, penalty analysis, AI Scout chatbot, team insights "
-    "and econometrics for the Premier League, La Liga, Bundesliga and more."
+    "Free football analytics dashboard covering 30 competitions worldwide. "
+    "Live league tables, OLS regression, penalty analysis, AI Scout chatbot "
+    "and team insights for the Premier League, La Liga, Bundesliga, Serie A, "
+    "Ligue 1, Champions League, World Cup and 23 more leagues."
 )
-_OG_IMAGE = f"{_OG_URL}/app/static/og-image.png"
+_OG_KEYWORDS = (
+    "football statistics, soccer analytics, league tables, football econometrics, "
+    "Premier League stats, La Liga stats, Bundesliga stats, Serie A stats, "
+    "Ligue 1 stats, Champions League stats, football regression analysis, "
+    "penalty analysis, football data, team insights, football dashboard, "
+    "football metrics, soccer statistics, football trends, xG, goals analysis"
+)
+
+_JSON_LD = {{
+    "@context": "https://schema.org",
+    "@type": "WebApplication",
+    "name": "Football Econometrics Dashboard",
+    "url": _OG_URL,
+    "description": _OG_DESC,
+    "applicationCategory": "SportsApplication",
+    "operatingSystem": "Any",
+    "offers": {{"@type": "Offer", "price": "0", "priceCurrency": "USD"}},
+    "author": {{"@type": "Organization", "name": "Football Econometrics Dashboard"}},
+    "keywords": _OG_KEYWORDS,
+    "featureList": [
+        "Live league tables for 30 competitions",
+        "OLS regression points predictor",
+        "Bayesian penalty conversion model",
+        "AI Scout chatbot",
+        "Team insights and benchmarking",
+        "Cross-league comparisons",
+        "Historical trend analysis",
+    ],
+}}
+
+import json as _json
+_JSON_LD_STR = _json.dumps(_JSON_LD)
 
 st.markdown(f"""
 <script>
 (function(){{
   var tags = [
-    {{name:"description", content:"{_OG_DESC}"}},
+    {{name:"description",        content:{_json.dumps(_OG_DESC)}}},
+    {{name:"keywords",           content:{_json.dumps(_OG_KEYWORDS)}}},
+    {{name:"author",             content:"Football Econometrics Dashboard"}},
+    {{name:"robots",             content:"index, follow"}},
+    {{name:"theme-color",        content:"#0e1117"}},
     {{property:"og:type",        content:"website"}},
-    {{property:"og:url",         content:"{_OG_URL}"}},
-    {{property:"og:title",       content:"{_OG_TITLE}"}},
-    {{property:"og:description", content:"{_OG_DESC}"}},
-    {{property:"og:image",       content:"{_OG_IMAGE}"}},
+    {{property:"og:url",         content:{_json.dumps(_OG_URL)}}},
+    {{property:"og:title",       content:{_json.dumps(_OG_TITLE)}}},
+    {{property:"og:description", content:{_json.dumps(_OG_DESC)}}},
+    {{property:"og:site_name",   content:"Football Econometrics Dashboard"}},
+    {{property:"og:locale",      content:"en_GB"}},
     {{name:"twitter:card",        content:"summary_large_image"}},
-    {{name:"twitter:url",         content:"{_OG_URL}"}},
-    {{name:"twitter:title",       content:"{_OG_TITLE}"}},
-    {{name:"twitter:description", content:"{_OG_DESC}"}},
-    {{name:"twitter:image",       content:"{_OG_IMAGE}"}},
-    {{name:"robots",  content:"index, follow"}},
-    {{name:"theme-color", content:"#0e1117"}},
+    {{name:"twitter:url",         content:{_json.dumps(_OG_URL)}}},
+    {{name:"twitter:title",       content:{_json.dumps(_OG_TITLE)}}},
+    {{name:"twitter:description", content:{_json.dumps(_OG_DESC)}}},
   ];
   tags.forEach(function(attrs){{
     var el = document.createElement("meta");
@@ -61,8 +95,13 @@ st.markdown(f"""
   }});
   // Canonical link
   var link = document.createElement("link");
-  link.rel = "canonical"; link.href = "{_OG_URL}";
+  link.rel = "canonical"; link.href = {_json.dumps(_OG_URL)};
   document.head.appendChild(link);
+  // JSON-LD structured data
+  var script = document.createElement("script");
+  script.type = "application/ld+json";
+  script.text = {_json.dumps(_JSON_LD_STR)};
+  document.head.appendChild(script);
 }})();
 </script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
