@@ -1441,6 +1441,14 @@ if nav_page == "AI Scout":
         user_input = None
         st.chat_input("Weekly limit reached — resets Sunday 23:59 GMT", disabled=True)
 
+    st.markdown(
+        '<p style="font-size:0.72rem;color:#6b7280;text-align:center;margin-top:4px;">'
+        '⚠️ AI-generated content — responses may contain errors. '
+        'Always verify facts from official sources before relying on them.'
+        '</p>',
+        unsafe_allow_html=True,
+    )
+
     if user_input:
         _imgs = list(st.session_state.scout_images)  # snapshot before clearing
 
@@ -1611,7 +1619,13 @@ if nav_page == "AI Scout":
                     "HISTORICAL questions (past seasons, historical stats, classic matches):\n"
                     "→ Use your training knowledge freely — this is where it is most reliable.\n\n"
                     "GENERAL RULE: Always be transparent about your source. If using live web results, say so. "
-                    "If giving a prediction based on general knowledge, say so. Never present a guess as fact.\n"
+                    "If giving a prediction based on general knowledge, say so. Never present a guess as fact.\n\n"
+                    "FACT-CHECKING RULE: Before stating any specific fact (a scoreline, a points total, a player "
+                    "stat, a transfer, a manager appointment), verify it against the web search results provided. "
+                    "If the web results do not confirm a specific claim, do NOT state it as fact — say you could not "
+                    "verify it and suggest the user checks a reliable source such as BBC Sport, Sky Sports, or the "
+                    "official league website. If web results partially support a claim, clearly flag what is confirmed "
+                    "vs. what is uncertain. Prefer saying 'I cannot confirm this' over stating an unverified claim.\n"
                     "══════════════════════════════════════════════════════\n\n"
                     "Explain concepts in plain, conversational English. Be helpful and encouraging. "
                     "When an image is attached, describe what you see and provide relevant football insights.\n\n"
