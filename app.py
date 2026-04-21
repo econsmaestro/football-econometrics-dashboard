@@ -24,9 +24,8 @@ st.set_page_config(
     layout="wide",
 )
 
-# ── SEO: inject meta description + Open Graph + Twitter Card into <head> ──────
-# JavaScript is needed because Streamlit only lets us write into <body>;
-# this script immediately appends the tags to the real <head> element.
+# ── SEO: inject meta tags + JSON-LD structured data into <head> ───────────────
+# JavaScript is needed because Streamlit only lets us write into <body>.
 _OG_URL   = "https://worf.replit.dev"
 _OG_TITLE = "Football Econometrics Dashboard"
 _OG_DESC  = (
@@ -35,23 +34,36 @@ _OG_DESC  = (
     "and econometrics for the Premier League, La Liga, Bundesliga and more."
 )
 _OG_IMAGE = f"{_OG_URL}/app/static/og-image.png"
+_OG_KEYWORDS = (
+    "football analytics, soccer statistics, Premier League stats, La Liga analysis, "
+    "Bundesliga table, Serie A regression, football econometrics, OLS regression football, "
+    "expected goals, xG model, penalty analysis, AI football scout, league table, "
+    "football data science, football predictions, team performance metrics, "
+    "Champions League statistics, football machine learning"
+)
 
 st.markdown(f"""
 <script>
 (function(){{
+  // ── meta tags ──
   var tags = [
-    {{name:"description", content:"{_OG_DESC}"}},
+    {{name:"description",  content:"{_OG_DESC}"}},
+    {{name:"keywords",     content:"{_OG_KEYWORDS}"}},
+    {{name:"author",       content:"Football Econometrics Dashboard"}},
     {{property:"og:type",        content:"website"}},
     {{property:"og:url",         content:"{_OG_URL}"}},
     {{property:"og:title",       content:"{_OG_TITLE}"}},
     {{property:"og:description", content:"{_OG_DESC}"}},
     {{property:"og:image",       content:"{_OG_IMAGE}"}},
+    {{property:"og:image:width",  content:"1200"}},
+    {{property:"og:image:height", content:"630"}},
+    {{property:"og:site_name",    content:"{_OG_TITLE}"}},
     {{name:"twitter:card",        content:"summary_large_image"}},
     {{name:"twitter:url",         content:"{_OG_URL}"}},
     {{name:"twitter:title",       content:"{_OG_TITLE}"}},
     {{name:"twitter:description", content:"{_OG_DESC}"}},
     {{name:"twitter:image",       content:"{_OG_IMAGE}"}},
-    {{name:"robots",  content:"index, follow"}},
+    {{name:"robots",      content:"index, follow, max-snippet:-1, max-image-preview:large"}},
     {{name:"theme-color", content:"#0e1117"}},
   ];
   tags.forEach(function(attrs){{
@@ -59,10 +71,111 @@ st.markdown(f"""
     Object.keys(attrs).forEach(function(k){{ el.setAttribute(k, attrs[k]); }});
     document.head.appendChild(el);
   }});
-  // Canonical link
+
+  // ── canonical + lang ──
   var link = document.createElement("link");
   link.rel = "canonical"; link.href = "{_OG_URL}";
   document.head.appendChild(link);
+  document.documentElement.setAttribute("lang", "en");
+
+  // ── sitemap reference ──
+  var smLink = document.createElement("link");
+  smLink.rel = "sitemap"; smLink.type = "application/xml";
+  smLink.title = "Sitemap"; smLink.href = "{_OG_URL}/app/static/sitemap.xml";
+  document.head.appendChild(smLink);
+
+  // ── JSON-LD: WebApplication ──
+  var appSchema = {{
+    "@context": "https://schema.org",
+    "@type": "WebApplication",
+    "name": "{_OG_TITLE}",
+    "url": "{_OG_URL}",
+    "description": "{_OG_DESC}",
+    "applicationCategory": "SportsApplication",
+    "operatingSystem": "Any",
+    "offers": {{
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "USD"
+    }},
+    "featureList": [
+      "Live league tables for 30 competitions",
+      "OLS regression statistical analysis",
+      "Penalty placement Bayesian model",
+      "AI Scout chatbot powered by GPT-4",
+      "Team insights and benchmarking",
+      "Cross-league comparisons",
+      "Points predictions and title odds"
+    ],
+    "screenshot": "{_OG_IMAGE}",
+    "author": {{
+      "@type": "Organization",
+      "name": "Football Econometrics Dashboard"
+    }}
+  }};
+  var appEl = document.createElement("script");
+  appEl.type = "application/ld+json";
+  appEl.text = JSON.stringify(appSchema);
+  document.head.appendChild(appEl);
+
+  // ── JSON-LD: FAQPage (common search questions) ──
+  var faqSchema = {{
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "mainEntity": [
+      {{
+        "@type": "Question",
+        "name": "How do I analyse Premier League statistics?",
+        "acceptedAnswer": {{
+          "@type": "Answer",
+          "text": "Select 'Premier League' from the competition dropdown, choose a season, and navigate to the Statistical Analysis tab for OLS regression models showing what drives points."
+        }}
+      }},
+      {{
+        "@type": "Question",
+        "name": "What does R-squared mean in football analytics?",
+        "acceptedAnswer": {{
+          "@type": "Answer",
+          "text": "R-squared measures how much of the variation in league points is explained by a statistical model (e.g. goals scored and conceded). A value of 0.90 means 90% of the points variation is captured."
+        }}
+      }},
+      {{
+        "@type": "Question",
+        "name": "Which football competitions does this dashboard cover?",
+        "acceptedAnswer": {{
+          "@type": "Answer",
+          "text": "The dashboard covers 30 competitions including the Premier League, La Liga, Bundesliga, Serie A, Ligue 1, Champions League, Europa League, World Cup, MLS, J1 League and more."
+        }}
+      }},
+      {{
+        "@type": "Question",
+        "name": "How do penalty conversion rates differ across leagues?",
+        "acceptedAnswer": {{
+          "@type": "Answer",
+          "text": "The Penalty Analysis tab uses a Bayesian model to estimate conversion rates by shot placement zone and provides game-theory strategic recommendations for penalty takers."
+        }}
+      }}
+    ]
+  }};
+  var faqEl = document.createElement("script");
+  faqEl.type = "application/ld+json";
+  faqEl.text = JSON.stringify(faqSchema);
+  document.head.appendChild(faqEl);
+
+  // ── JSON-LD: BreadcrumbList ──
+  var breadcrumbSchema = {{
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    "itemListElement": [
+      {{"@type":"ListItem","position":1,"name":"Home","item":"{_OG_URL}"}},
+      {{"@type":"ListItem","position":2,"name":"Dashboard","item":"{_OG_URL}/?page=dashboard"}},
+      {{"@type":"ListItem","position":3,"name":"AI Scout","item":"{_OG_URL}/?page=ai-scout"}}
+    ]
+  }};
+  var bcEl = document.createElement("script");
+  bcEl.type = "application/ld+json";
+  bcEl.text = JSON.stringify(breadcrumbSchema);
+  document.head.appendChild(bcEl);
 }})();
 </script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -631,6 +744,22 @@ with st.sidebar:
         f'</div>'
         f'<div style="font-size:0.85em;color:#888;margin-top:6px;">{selected_league}</div>'
         f'</div>',
+        unsafe_allow_html=True,
+    )
+
+    # Dynamic browser-tab title + meta description per competition
+    _dyn_title = f"{selected_league} Stats & Analysis | Football Econometrics Dashboard"
+    _dyn_desc  = (
+        f"Live league table, OLS regression, penalty analysis and AI Scout "
+        f"for the {selected_league}. Free football data science dashboard."
+    )
+    st.markdown(
+        f"<script>document.title={repr(_dyn_title)};"
+        f"var _dm=document.querySelector('meta[name=\"description\"]');"
+        f"if(_dm)_dm.setAttribute('content',{repr(_dyn_desc)});"
+        f"var _og=document.querySelector('meta[property=\"og:title\"]');"
+        f"if(_og)_og.setAttribute('content',{repr(_dyn_title)});"
+        f"</script>",
         unsafe_allow_html=True,
     )
 
