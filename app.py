@@ -3155,24 +3155,20 @@ try:
             available_vars = [v for v in numeric_vars if v in multi_season.columns]
             corr_data = multi_season[available_vars].dropna()
 
-            st.subheader("Descriptive Statistics")
-            st.markdown("Summary of key variables across all selected seasons.")
-
-            desc_vars = [v for v in ["W", "D", "L", "GF", "GA", "GD", "Pts", "PPG", "Win%", "GF/Game", "GA/Game"] if v in multi_season.columns]
-            desc_data = multi_season[desc_vars].dropna()
-            desc_table = desc_data.describe().T
-            desc_table["Variance"] = desc_data.var()
-            desc_table = desc_table[["count", "mean", "std", "Variance", "min", "25%", "50%", "75%", "max"]]
-            desc_table.columns = ["Count", "Mean", "Std. Dev.", "Variance", "Min", "25th %ile", "Median", "75th %ile", "Max"]
-            st.dataframe(desc_table.round(3), use_container_width=True)
-
-            with st.expander("Formulas: Descriptive Statistics", expanded=False):
-                st.latex(r"\text{Mean} \;(\bar{x}) = \frac{1}{n}\sum_{i=1}^{n} x_i")
-                st.markdown("The average value — add up all values and divide by how many there are.")
-                st.latex(r"\text{Variance} \;(\sigma^2) = \frac{1}{n-1}\sum_{i=1}^{n}(x_i - \bar{x})^2")
-                st.markdown("How spread out the values are from the average. Larger = more spread.")
-                st.latex(r"\text{Standard Deviation} \;(\sigma) = \sqrt{\text{Variance}}")
-                st.markdown("Same idea as variance but in the original units (e.g. points, goals), which makes it easier to interpret.")
+            with st.expander("Descriptive Statistics (averages, ranges, spread)", expanded=False):
+                st.markdown("Summary of key variables across all selected seasons.")
+                desc_vars = [v for v in ["W", "D", "L", "GF", "GA", "GD", "Pts", "PPG", "Win%", "GF/Game", "GA/Game"] if v in multi_season.columns]
+                desc_data = multi_season[desc_vars].dropna()
+                desc_table = desc_data.describe().T
+                desc_table["Variance"] = desc_data.var()
+                desc_table = desc_table[["count", "mean", "std", "Variance", "min", "25%", "50%", "75%", "max"]]
+                desc_table.columns = ["Count", "Mean", "Std. Dev.", "Variance", "Min", "25th %ile", "Median", "75th %ile", "Max"]
+                st.dataframe(desc_table.round(3), use_container_width=True)
+                st.markdown(
+                    "**Mean** = average value across all teams and seasons.  "
+                    "**Std. Dev.** = how much teams typically vary from that average.  "
+                    "**Median** = the middle value — half of teams are above this, half below."
+                )
 
             st.divider()
 
@@ -3286,10 +3282,57 @@ try:
                 y = reg_data["Pts"]
                 model = sm.OLS(y, X).fit()
 
-                col_r1, col_r2, col_r3 = st.columns(3)
-                col_r1.metric("R-squared", f"{model.rsquared:.4f}")
-                col_r2.metric("Adj. R-squared", f"{model.rsquared_adj:.4f}")
-                col_r3.metric("F-statistic", f"{model.fvalue:.2f}")
+                # ── Plain-English summary first ──
+                st.success(
+                    f"**Key finding:** Scoring and conceding goals together explain "
+                    f"**{model.rsquared * 100:.0f}%** of where teams finish in the table. "
+                    f"Each extra goal scored is worth about **+{model.params['GF']:.2f} points** "
+                    f"over a season; each extra goal conceded costs about "
+                    f"**{model.params['GA']:.2f} points**."
+                )
+
+                # ── Single R² metric with plain label ──
+                st.metric(
+                    label="How much of the final table does this model explain?",
+                    value=f"{model.rsquared * 100:.0f}%",
+                    help="R-squared: 100% would mean goals alone perfectly predict every team's points total. Anything above 85% is very strong."
+                )
+
+                # ── Simplified coefficient table ──
+                st.markdown("**What is each goal worth?**")
+                simple_coef_m1 = pd.DataFrame({
+                    "Factor": ["Goals Scored (GF)", "Goals Conceded (GA)"],
+                    "Points per goal (season total)": [
+                        f"+{model.params['GF']:.2f}",
+                        f"{model.params['GA']:.2f}",
+                    ],
+                })
+                st.dataframe(simple_coef_m1.set_index("Factor"), use_container_width=True)
+
+                # ── Advanced detail collapsed ──
+                with st.expander("Advanced statistics", expanded=False):
+                    col_r1, col_r2, col_r3 = st.columns(3)
+                    col_r1.metric("R-squared", f"{model.rsquared:.4f}")
+                    col_r2.metric("Adj. R-squared", f"{model.rsquared_adj:.4f}")
+                    col_r3.metric("F-statistic", f"{model.fvalue:.2f}")
+                    st.caption(
+                        "Adj. R-squared penalises R² for adding extra variables — a fairer comparison across models. "
+                        "F-statistic checks whether the model as a whole is statistically meaningful (higher = better)."
+                    )
+                    st.markdown("**Full coefficient table:**")
+                    coef_df = pd.DataFrame({
+                        "Factor": ["Baseline (starting points)", "Goals Scored (GF)", "Goals Conceded (GA)"],
+                        "Effect on Points": model.params.values.round(4),
+                        "Std. Error": model.bse.values.round(4),
+                        "t-value": model.tvalues.values.round(4),
+                        "p-value": model.pvalues.values.round(6),
+                    })
+                    st.dataframe(coef_df.set_index("Factor"), use_container_width=True)
+                    st.caption(
+                        "Std. Error = precision of the estimate (smaller is better). "
+                        "t-value > 2 means the effect is reliable. "
+                        "p-value < 0.05 means the result is very unlikely to be random chance."
+                    )
 
                 with st.expander("Formulas: Model Diagnostics", expanded=False):
                     st.latex(r"R^2 = 1 - \frac{\sum(y_i - \hat{y}_i)^2}{\sum(y_i - \bar{y})^2}")
@@ -3297,32 +3340,9 @@ try:
                     st.latex(r"\bar{R}^2 = 1 - (1 - R^2)\frac{n-1}{n-k-1}")
                     st.markdown("**Adjusted R-squared**: Penalises R-squared for adding more variables. Prevents overfitting — only rises if a new variable genuinely helps.")
                     st.latex(r"F = \frac{R^2 / k}{(1-R^2)/(n-k-1)}")
-                    st.markdown("**F-statistic**: Tests whether the model as a whole is meaningful. Higher = stronger evidence that at least one variable matters. n = number of observations, k = number of variables.")
-
-                st.markdown("**How much does each factor contribute?**")
-                coef_df = pd.DataFrame({
-                    "Factor": ["Baseline (starting points)", "Goals Scored (GF)", "Goals Conceded (GA)"],
-                    "Effect on Points": model.params.values.round(4),
-                    "Std. Error": model.bse.values.round(4),
-                    "Confidence (t-value)": model.tvalues.values.round(4),
-                    "Significance (p-value)": model.pvalues.values.round(6),
-                })
-                st.dataframe(coef_df.set_index("Factor"), use_container_width=True)
-
-                with st.expander("Formulas: Coefficient Statistics", expanded=False):
-                    st.latex(r"\text{Std. Error}(b_j) = \sqrt{\frac{\hat{\sigma}^2}{(1-R_j^2)\sum(x_{ij}-\bar{x}_j)^2}}")
-                    st.markdown("**Standard Error**: How precise the coefficient estimate is. Smaller = more precise.")
+                    st.markdown("**F-statistic**: Tests whether the model as a whole is meaningful. Higher = stronger evidence that at least one variable matters.")
                     st.latex(r"t = \frac{b_j}{\text{Std. Error}(b_j)}")
                     st.markdown("**t-value**: The coefficient divided by its standard error. Values above 2 (or below -2) are generally reliable.")
-                    st.markdown("**p-value**: The probability of seeing this result if the variable had no real effect. Below 0.05 = statistically significant (very unlikely to be random chance).")
-
-                st.markdown(
-                    f"**In plain English:** Each additional goal scored is associated with "
-                    f"**{model.params['GF']:.3f}** more points, while each additional goal "
-                    f"conceded is associated with **{model.params['GA']:.3f}** points "
-                    f"(holding the other constant). The model explains **{model.rsquared * 100:.1f}%** "
-                    f"of the variation in league points."
-                )
 
             st.divider()
             st.subheader("Model 1b: Recent Era (Last 5 Completed Seasons)")
@@ -3348,19 +3368,45 @@ try:
                     recent_end_label = format_season_label(CURRENT_SEASON_END - 1, league_cfg["season_type"])
                     st.markdown(f"*Using {len(reg_recent)} team-seasons from {recent_start_label} to {recent_end_label}*")
 
-                    rcol1, rcol2, rcol3 = st.columns(3)
-                    rcol1.metric("R-squared", f"{model_rec.rsquared:.4f}")
-                    rcol2.metric("Adj. R-squared", f"{model_rec.rsquared_adj:.4f}")
-                    rcol3.metric("F-statistic", f"{model_rec.fvalue:.2f}")
+                    # ── Plain English first ──
+                    gf_diff = model_rec.params["GF"] - model.params["GF"]
+                    ga_diff = model_rec.params["GA"] - model.params["GA"]
+                    st.success(
+                        f"**Recent era finding:** In the last 5 seasons each goal scored is worth "
+                        f"**+{model_rec.params['GF']:.2f} points** and each goal conceded costs "
+                        f"**{model_rec.params['GA']:.2f} points** — "
+                        f"{'slightly more impactful than the long-run average' if abs(gf_diff) > 0.01 or abs(ga_diff) > 0.01 else 'very similar to the long-run average'}."
+                    )
 
-                    coef_rec = pd.DataFrame({
-                        "Factor": ["Baseline (starting points)", "Goals Scored (GF)", "Goals Conceded (GA)"],
-                        "Effect on Points": model_rec.params.values.round(4),
-                        "Std. Error": model_rec.bse.values.round(4),
-                        "Confidence (t-value)": model_rec.tvalues.values.round(4),
-                        "Significance (p-value)": model_rec.pvalues.values.round(6),
+                    st.metric(
+                        label="How much of the recent table does this model explain?",
+                        value=f"{model_rec.rsquared * 100:.0f}%",
+                        help="R-squared for the recent 5-season model."
+                    )
+
+                    st.markdown("**What is each goal worth? (recent 5 seasons)**")
+                    simple_coef_rec = pd.DataFrame({
+                        "Factor": ["Goals Scored (GF)", "Goals Conceded (GA)"],
+                        "Points per goal (season total)": [
+                            f"+{model_rec.params['GF']:.2f}",
+                            f"{model_rec.params['GA']:.2f}",
+                        ],
                     })
-                    st.dataframe(coef_rec.set_index("Factor"), use_container_width=True)
+                    st.dataframe(simple_coef_rec.set_index("Factor"), use_container_width=True)
+
+                    with st.expander("Advanced statistics", expanded=False):
+                        rcol1, rcol2, rcol3 = st.columns(3)
+                        rcol1.metric("R-squared", f"{model_rec.rsquared:.4f}")
+                        rcol2.metric("Adj. R-squared", f"{model_rec.rsquared_adj:.4f}")
+                        rcol3.metric("F-statistic", f"{model_rec.fvalue:.2f}")
+                        coef_rec = pd.DataFrame({
+                            "Factor": ["Baseline (starting points)", "Goals Scored (GF)", "Goals Conceded (GA)"],
+                            "Effect on Points": model_rec.params.values.round(4),
+                            "Std. Error": model_rec.bse.values.round(4),
+                            "t-value": model_rec.tvalues.values.round(4),
+                            "p-value": model_rec.pvalues.values.round(6),
+                        })
+                        st.dataframe(coef_rec.set_index("Factor"), use_container_width=True)
 
                     st.markdown("**Comparison: Full History vs Recent Era**")
                     if "GF" in multi_season.columns:
@@ -3381,16 +3427,6 @@ try:
                         })
                         st.dataframe(comp_data.set_index("Metric"), use_container_width=True)
 
-                    gf_diff = model_rec.params["GF"] - model.params["GF"]
-                    ga_diff = model_rec.params["GA"] - model.params["GA"]
-                    st.markdown(
-                        f"**In plain English:** In the recent era, each goal scored is worth "
-                        f"{'more' if gf_diff > 0 else 'less'} ({model_rec.params['GF']:.3f} vs {model.params['GF']:.3f}) "
-                        f"and each goal conceded costs "
-                        f"{'more' if abs(model_rec.params['GA']) > abs(model.params['GA']) else 'less'} "
-                        f"({model_rec.params['GA']:.3f} vs {model.params['GA']:.3f}). "
-                        f"{'The widening gap between top and bottom teams means goals have a stronger impact on points in recent seasons.' if abs(gf_diff) > 0.01 or abs(ga_diff) > 0.01 else 'The relationship has remained relatively stable.'}"
-                    )
             else:
                 st.info("Not enough recent completed seasons in the selected range to build this model.")
 
@@ -3407,26 +3443,44 @@ try:
                 y2 = reg_data2["Pts"]
                 model2 = sm.OLS(y2, X2).fit()
 
-                col_e1, col_e2, col_e3 = st.columns(3)
-                col_e1.metric("R-squared", f"{model2.rsquared:.4f}")
-                col_e2.metric("Adj. R-squared", f"{model2.rsquared_adj:.4f}")
-                col_e3.metric("F-statistic", f"{model2.fvalue:.2f}")
-
-                coef_df2 = pd.DataFrame({
-                    "Factor": ["Baseline", "Wins (W)", "Draws (D)", "Losses (L)"],
-                    "Effect on Points": model2.params.values.round(4),
-                    "Std. Error": model2.bse.values.round(4),
-                    "Confidence (t-value)": model2.tvalues.values.round(4),
-                    "Significance (p-value)": model2.pvalues.values.round(6),
-                })
-                st.dataframe(coef_df2.set_index("Factor"), use_container_width=True)
-
-                st.markdown(
-                    f"**In plain English:** As expected, each win contributes ~3 points "
-                    f"(coefficient = {model2.params['W']:.2f}) and each draw ~1 point "
-                    f"(coefficient = {model2.params['D']:.2f}). The near-perfect R-squared "
-                    f"({model2.rsquared:.4f}) confirms this — points are directly determined by results."
+                # ── Plain English first ──
+                st.success(
+                    f"**Key finding:** Wins, draws and losses explain "
+                    f"**{model2.rsquared * 100:.0f}%** of points — almost perfectly, as you'd expect. "
+                    f"Each win is worth ~**{model2.params['W']:.1f} points** and each draw ~**{model2.params['D']:.1f} point**. "
+                    f"This model confirms the standard football scoring system holds true across all seasons."
                 )
+
+                st.metric(
+                    label="How much of the final table does this model explain?",
+                    value=f"{model2.rsquared * 100:.0f}%",
+                    help="Near 100% is expected here — points are directly calculated from wins and draws."
+                )
+
+                st.markdown("**What is each result worth?**")
+                simple_coef_m2 = pd.DataFrame({
+                    "Result": ["Win", "Draw", "Loss"],
+                    "Points value": [
+                        f"+{model2.params['W']:.2f}",
+                        f"+{model2.params['D']:.2f}",
+                        "0",
+                    ],
+                })
+                st.dataframe(simple_coef_m2.set_index("Result"), use_container_width=True)
+
+                with st.expander("Advanced statistics", expanded=False):
+                    col_e1, col_e2, col_e3 = st.columns(3)
+                    col_e1.metric("R-squared", f"{model2.rsquared:.4f}")
+                    col_e2.metric("Adj. R-squared", f"{model2.rsquared_adj:.4f}")
+                    col_e3.metric("F-statistic", f"{model2.fvalue:.2f}")
+                    coef_df2 = pd.DataFrame({
+                        "Factor": ["Baseline", "Wins (W)", "Draws (D)", "Losses (L)"],
+                        "Effect on Points": model2.params.values.round(4),
+                        "Std. Error": model2.bse.values.round(4),
+                        "t-value": model2.tvalues.values.round(4),
+                        "p-value": model2.pvalues.values.round(6),
+                    })
+                    st.dataframe(coef_df2.set_index("Factor"), use_container_width=True)
 
         with tab3:
             st.subheader("Exploratory Visualizations")
