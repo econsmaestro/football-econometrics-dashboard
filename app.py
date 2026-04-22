@@ -3735,13 +3735,14 @@ try:
                     "Drag the slider to run **what-if scenarios**."
                 )
                 _best_pred_prob = best_pred
+                _max_pts = league_cfg.get("games_per_season", 38) * 3
                 _prob_pts = st.slider(
                     "Projected final points",
-                    min_value=20, max_value=110,
-                    value=int(round(_best_pred_prob)),
+                    min_value=20, max_value=_max_pts,
+                    value=min(int(round(_best_pred_prob)), _max_pts),
                     step=1,
                     key="outcome_prob_slider",
-                    help="Defaults to the model's predicted points. Drag to explore scenarios.",
+                    help=f"Defaults to the model's predicted points. Max is {_max_pts} (theoretical maximum for this league). Drag to explore scenarios.",
                 )
                 _comp_hist = multi_season[multi_season["Season_End"] < CURRENT_SEASON_END].copy() if "Season_End" in multi_season.columns else multi_season.copy()
                 if _comp_hist.empty:
