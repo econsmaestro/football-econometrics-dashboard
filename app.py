@@ -43,7 +43,7 @@ _OG_KEYWORDS = (
     "football metrics, soccer statistics, football trends, xG, goals analysis"
 )
 
-_JSON_LD = {{
+_JSON_LD = {
     "@context": "https://schema.org",
     "@type": "WebApplication",
     "name": "Football Econometrics Dashboard",
@@ -51,8 +51,8 @@ _JSON_LD = {{
     "description": _OG_DESC,
     "applicationCategory": "SportsApplication",
     "operatingSystem": "Any",
-    "offers": {{"@type": "Offer", "price": "0", "priceCurrency": "USD"}},
-    "author": {{"@type": "Organization", "name": "Football Econometrics Dashboard"}},
+    "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"},
+    "author": {"@type": "Organization", "name": "Football Econometrics Dashboard"},
     "keywords": _OG_KEYWORDS,
     "featureList": [
         "Live league tables for 30 competitions",
@@ -63,7 +63,7 @@ _JSON_LD = {{
         "Cross-league comparisons",
         "Historical trend analysis",
     ],
-}}
+}
 
 import json as _json
 _JSON_LD_STR = _json.dumps(_JSON_LD)
