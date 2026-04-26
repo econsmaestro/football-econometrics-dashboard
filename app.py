@@ -18,6 +18,45 @@ import time
 from datetime import datetime, timedelta
 from models import load_fallback_data, load_fallback_penalty_data
 
+# ── Patch Streamlit's shell index.html with static SEO tags ───────────────────
+# Runs every startup; idempotent — skips if already patched.
+# Ensures OG/Twitter tags survive uv reinstalls by re-applying from source.
+def _patch_streamlit_shell() -> None:
+    import pathlib
+    _SEO_BLOCK = """\
+    <title>Football Econometrics Dashboard</title>
+    <meta name="description" content="Analyse 30 football competitions worldwide — live league tables, OLS regression, penalty analysis, AI Scout chatbot, team insights and econometrics for the Premier League, La Liga, Bundesliga and more." />
+    <meta name="keywords" content="football analytics, soccer statistics, Premier League stats, La Liga analysis, Bundesliga table, Serie A regression, football econometrics, OLS regression football, expected goals, xG model, penalty analysis, AI football scout, league table, football data science, football predictions, team performance metrics, Champions League statistics, football machine learning" />
+    <meta name="author" content="Football Econometrics Dashboard" />
+    <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large" />
+    <meta name="theme-color" content="#0e1117" />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://worf.replit.dev" />
+    <meta property="og:title" content="Football Econometrics Dashboard" />
+    <meta property="og:description" content="Analyse 30 football competitions worldwide — live league tables, OLS regression, penalty analysis, AI Scout chatbot, team insights and econometrics for the Premier League, La Liga, Bundesliga and more." />
+    <meta property="og:image" content="https://worf.replit.dev/app/static/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:site_name" content="Football Econometrics Dashboard" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:url" content="https://worf.replit.dev" />
+    <meta name="twitter:title" content="Football Econometrics Dashboard" />
+    <meta name="twitter:description" content="Analyse 30 football competitions worldwide — live league tables, OLS regression, penalty analysis, AI Scout chatbot, team insights and econometrics for the Premier League, La Liga, Bundesliga and more." />
+    <meta name="twitter:image" content="https://worf.replit.dev/app/static/og-image.png" />
+    <link rel="canonical" href="https://worf.replit.dev" />
+    <link rel="sitemap" type="application/xml" title="Sitemap" href="https://worf.replit.dev/app/static/sitemap.xml" />"""
+    try:
+        idx = pathlib.Path(st.__file__).parent / "static" / "index.html"
+        html = idx.read_text(encoding="utf-8")
+        if "og:title" in html:
+            return
+        html = html.replace("    <title>Streamlit</title>", _SEO_BLOCK)
+        idx.write_text(html, encoding="utf-8")
+    except Exception:
+        pass
+
+_patch_streamlit_shell()
+
 st.set_page_config(
     page_title="Football Econometrics Dashboard",
     page_icon="⚽",
