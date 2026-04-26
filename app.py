@@ -38,6 +38,9 @@ def _patch_streamlit_shell():
         patched = html.replace("<head>", "<head>\n" + _SEO_TAGS, 1)
         if patched == html:
             patched = html.replace("</head>", _SEO_TAGS + "\n  </head>", 1)
+        # Remove Streamlit's default <title>Streamlit</title> to avoid duplicates
+        import re
+        patched = re.sub(r"<title>Streamlit</title>\s*", "", patched)
         dst.write_text(patched, encoding="utf-8")
     except Exception:
         pass
