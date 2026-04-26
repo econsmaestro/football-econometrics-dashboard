@@ -1,5 +1,17 @@
 import streamlit as st
 import streamlit.components.v1 as components
+
+# Patch Streamlit's shell index.html with static SEO tags on first run.
+def _patch_streamlit_shell():
+    import pathlib, shutil
+    try:
+        src = pathlib.Path(__file__).parent / "seo_assets" / "streamlit_shell.html"
+        dst = pathlib.Path(st.__file__).parent / "static" / "index.html"
+        if "og:title" not in dst.read_text(encoding="utf-8"):
+            shutil.copy(src, dst)
+    except Exception:
+        pass
+_patch_streamlit_shell()
 import pandas as pd
 import numpy as np
 import requests
