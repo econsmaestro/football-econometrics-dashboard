@@ -1,14 +1,44 @@
 import streamlit as st
 import streamlit.components.v1 as components
 
-# Patch Streamlit's shell index.html with static SEO tags on first run.
 def _patch_streamlit_shell():
-    import pathlib, shutil
+    """Inject SEO meta tags into Streamlit's index.html without replacing it.
+
+    Replacing the file breaks the app whenever Streamlit regenerates its JS/CSS
+    bundle hashes (e.g. after a reinstall). This approach reads the live file and
+    only inserts the tags we need, leaving all bundle references intact.
+    """
+    import pathlib
+    _SEO_TAGS = """\
+    <title>Football Econometrics Dashboard</title>
+    <meta name="description" content="Analyse 30 football competitions worldwide — live league tables, OLS regression, penalty analysis, AI Scout chatbot, team insights and econometrics for the Premier League, La Liga, Bundesliga and more." />
+    <meta name="keywords" content="football analytics, soccer statistics, Premier League stats, La Liga analysis, Bundesliga table, Serie A regression, football econometrics, OLS regression football, expected goals, xG model, penalty analysis, AI football scout, league table, football data science, football predictions, team performance metrics, Champions League statistics, football machine learning" />
+    <meta name="author" content="Football Econometrics Dashboard" />
+    <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large" />
+    <meta name="theme-color" content="#0e1117" />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://worf.replit.dev" />
+    <meta property="og:title" content="Football Econometrics Dashboard" />
+    <meta property="og:description" content="Analyse 30 football competitions worldwide — live league tables, OLS regression, penalty analysis, AI Scout chatbot, team insights and econometrics for the Premier League, La Liga, Bundesliga and more." />
+    <meta property="og:image" content="https://worf.replit.dev/app/static/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:site_name" content="Football Econometrics Dashboard" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Football Econometrics Dashboard" />
+    <meta name="twitter:description" content="Analyse 30 football competitions worldwide — live league tables, OLS regression, penalty analysis, AI Scout chatbot, team insights and econometrics for the Premier League, La Liga, Bundesliga and more." />
+    <meta name="twitter:image" content="https://worf.replit.dev/app/static/og-image.png" />
+    <link rel="canonical" href="https://worf.replit.dev" />
+    <link rel="sitemap" type="application/xml" title="Sitemap" href="https://worf.replit.dev/app/static/sitemap.xml" />"""
     try:
-        src = pathlib.Path(__file__).parent / "seo_assets" / "streamlit_shell.html"
         dst = pathlib.Path(st.__file__).parent / "static" / "index.html"
-        if "og:title" not in dst.read_text(encoding="utf-8"):
-            shutil.copy(src, dst)
+        html = dst.read_text(encoding="utf-8")
+        if "og:title" in html:
+            return
+        patched = html.replace("<head>", "<head>\n" + _SEO_TAGS, 1)
+        if patched == html:
+            patched = html.replace("</head>", _SEO_TAGS + "\n  </head>", 1)
+        dst.write_text(patched, encoding="utf-8")
     except Exception:
         pass
 _patch_streamlit_shell()
