@@ -468,6 +468,14 @@ def init_db():
             query TEXT NOT NULL,
             created_at TIMESTAMP DEFAULT NOW()
         );
+        CREATE TABLE IF NOT EXISTS scout_chat_history (
+            id SERIAL PRIMARY KEY,
+            uid VARCHAR(64) NOT NULL,
+            role VARCHAR(20) NOT NULL,
+            content TEXT NOT NULL,
+            images_b64 TEXT[] DEFAULT '{}',
+            created_at TIMESTAMP DEFAULT NOW()
+        );
     """)
     conn.commit()
     cur.close()
@@ -1234,6 +1242,48 @@ if nav_page == "AI Scout":
         except Exception:
             pass
 
+    # ── Chat history persistence ─────────────────────────────────────────────
+    def _load_scout_history(uid):
+        try:
+            conn = get_db_conn()
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT role, content, images_b64 FROM scout_chat_history "
+                "WHERE uid = %s ORDER BY id ASC",
+                (uid,),
+            )
+            rows = cur.fetchall()
+            cur.close()
+            conn.close()
+            return [{"role": r, "content": c, "images_b64": list(imgs or [])} for r, c, imgs in rows]
+        except Exception:
+            return []
+
+    def _save_scout_message(uid, role, content, images_b64=None):
+        try:
+            conn = get_db_conn()
+            cur = conn.cursor()
+            cur.execute(
+                "INSERT INTO scout_chat_history (uid, role, content, images_b64) VALUES (%s, %s, %s, %s)",
+                (uid, role, content, images_b64 or []),
+            )
+            conn.commit()
+            cur.close()
+            conn.close()
+        except Exception:
+            pass
+
+    def _clear_scout_history(uid):
+        try:
+            conn = get_db_conn()
+            cur = conn.cursor()
+            cur.execute("DELETE FROM scout_chat_history WHERE uid = %s", (uid,))
+            conn.commit()
+            cur.close()
+            conn.close()
+        except Exception:
+            pass
+
     # ── Known leagues / teams for memory extraction ──────────────────────────
     _KNOWN_LEAGUES = [
         "premier league", "la liga", "bundesliga", "serie a", "ligue 1",
@@ -1445,7 +1495,7 @@ if nav_page == "AI Scout":
     _client = openai.OpenAI(base_url=_BASE_URL, api_key=_API_KEY)
 
     if "ai_scout_messages" not in st.session_state:
-        st.session_state.ai_scout_messages = []
+        st.session_state.ai_scout_messages = _load_scout_history(_uid)
     if "scout_images" not in st.session_state:
         st.session_state.scout_images = []       # list of (bytes, mime, name)
     if "scout_upload_key" not in st.session_state:
@@ -1542,12 +1592,13 @@ if nav_page == "AI Scout":
             user_content = user_input
             _b64_list = []
 
-        # Store in history
+        # Store in history (session + DB)
         st.session_state.ai_scout_messages.append({
             "role": "user",
             "content": user_input,
             "images_b64": _b64_list,
         })
+        _save_scout_message(_uid, "user", user_input, _b64_list)
         # Clear images and reset uploader
         st.session_state.scout_images = []
         st.session_state.scout_upload_key += 1
@@ -1793,6 +1844,7 @@ if nav_page == "AI Scout":
             st.markdown(reply)
 
         st.session_state.ai_scout_messages.append({"role": "assistant", "content": reply})
+        _save_scout_message(_uid, "assistant", reply)
 
     # ── Attach row — always LAST so it sits just above the chat input ─────────
     # Spacer keeps it near the bottom when no messages yet
@@ -1831,6 +1883,7 @@ if nav_page == "AI Scout":
             st.session_state.ai_scout_messages = []
             st.session_state.scout_images = []
             st.session_state.scout_upload_key += 1
+            _clear_scout_history(_uid)
             st.rerun()
     with _bu:
         _new_upload = st.file_uploader(
