@@ -2,24 +2,21 @@
 WhatsApp Bulk Messenger
 -----------------------
 Opens a pre-filled WhatsApp Web chat for each number in the list.
-Just click Send for each one — the next tab opens automatically.
-
-SETUP (one time):
-    pip install is NOT needed — uses only Python standard library
+Works in both Jupyter and the terminal.
 
 HOW TO USE:
 1. Log into WhatsApp Web in your browser (web.whatsapp.com) and keep it open
 2. Fill in PHONE_NUMBERS and MESSAGE below
-3. Run:  python whatsapp_bulk_send.py
+3. Run all cells (in Jupyter) or: python whatsapp_bulk_send.py (in terminal)
+4. Click Send for each tab that opens — the next one opens automatically
 """
 
-import webbrowser
 import urllib.parse
 import time
 
 # ── EDIT THESE ──────────────────────────────────────────────────────────────
 
-# Singapore numbers — 8 digits, no leading zero, no country code
+# Singapore numbers — 8 digits, no country code needed
 # The script adds +65 automatically
 PHONE_NUMBERS = [
     "91234567",
@@ -40,13 +37,21 @@ DELAY_SECONDS = 15
 COUNTRY_CODE = "65"
 
 
-def build_url(phone, message):
+def build_url(phone):
     full_number = COUNTRY_CODE + phone.strip()
-    encoded = urllib.parse.quote(message)
+    encoded = urllib.parse.quote(MESSAGE)
     return f"https://web.whatsapp.com/send?phone={full_number}&text={encoded}"
 
 
-def main():
+def is_jupyter():
+    try:
+        from IPython import get_ipython
+        return get_ipython() is not None
+    except ImportError:
+        return False
+
+
+def send_all():
     total = len(PHONE_NUMBERS)
     if total == 0:
         print("ERROR: PHONE_NUMBERS list is empty. Add your numbers first.")
@@ -60,19 +65,37 @@ def main():
         print(f"  ... and {total - 5} more")
     print()
 
+    if is_jupyter():
+        _send_jupyter(total)
+    else:
+        _send_terminal(total)
+
+
+def _send_jupyter(total):
+    from IPython.display import display, Javascript
     input("Press Enter when WhatsApp Web is open in your browser...")
-
     for i, number in enumerate(PHONE_NUMBERS, start=1):
-        url = build_url(number, MESSAGE)
+        url = build_url(number)
         print(f"[{i}/{total}] Opening +{COUNTRY_CODE}{number.strip()} ...")
-        webbrowser.open(url)
-
+        display(Javascript(f'window.open("{url}", "_blank");'))
         if i < total:
             print(f"         -> Click Send, then wait {DELAY_SECONDS}s.\n")
             time.sleep(DELAY_SECONDS)
+    print("\nAll done!")
 
+
+def _send_terminal(total):
+    import webbrowser
+    input("Press Enter when WhatsApp Web is open in your browser...")
+    for i, number in enumerate(PHONE_NUMBERS, start=1):
+        url = build_url(number)
+        print(f"[{i}/{total}] Opening +{COUNTRY_CODE}{number.strip()} ...")
+        webbrowser.open(url)
+        if i < total:
+            print(f"         -> Click Send, then wait {DELAY_SECONDS}s.\n")
+            time.sleep(DELAY_SECONDS)
     print("\nAll done!")
 
 
 if __name__ == "__main__":
-    main()
+    send_all()
