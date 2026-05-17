@@ -24,15 +24,12 @@ import time
 
 # ── EDIT THESE ──────────────────────────────────────────────────────────────
 
-# Your Chrome user data folder — this lets Selenium use your existing
-# WhatsApp Web login so no QR scan is needed.
-#
-# Windows:  r"C:\Users\YOUR_NAME\AppData\Local\Google\Chrome\User Data"
-# Mac:      "/Users/YOUR_NAME/Library/Application Support/Google/Chrome"
-# Linux:    "/home/YOUR_NAME/.config/google-chrome"
-#
-# Replace YOUR_NAME with your actual Windows/Mac username
-CHROME_PROFILE_PATH = r"C:\Users\YOUR_NAME\AppData\Local\Google\Chrome\User Data"
+# A dedicated profile folder just for this script.
+# It is created automatically on first run — you do NOT need to change this.
+# First run: WhatsApp Web will ask you to scan a QR code once.
+# Every run after that: it remembers your login, no QR needed.
+import os
+CHROME_PROFILE_PATH = os.path.join(os.path.expanduser("~"), "whatsapp_sender_profile")
 
 # Singapore numbers — 8 digits, no country code
 # +65 is added automatically
@@ -69,19 +66,20 @@ def send_all():
         return
 
     print(f"WhatsApp Bulk Sender — {total} contacts")
-    print("Starting Chrome with your existing profile...")
+    print("Opening a separate Chrome window for this script...")
 
     options = Options()
     options.add_argument(f"--user-data-dir={CHROME_PROFILE_PATH}")
-    options.add_argument("--profile-directory=Default")
     options.add_argument("--no-first-run")
     options.add_argument("--no-default-browser-check")
 
     driver = webdriver.Chrome(options=options)
-    # Open WhatsApp Web first so it's ready
     driver.get("https://web.whatsapp.com")
-    print("Waiting for WhatsApp Web to load (15s)...")
-    time.sleep(15)
+    print()
+    print("*** FIRST TIME ONLY: scan the QR code in the Chrome window that just opened ***")
+    print("*** After that your login is saved — no QR needed on future runs             ***")
+    print()
+    input("Press Enter once you can see your WhatsApp chats in that window...")
 
     sent = 0
     failed = []
