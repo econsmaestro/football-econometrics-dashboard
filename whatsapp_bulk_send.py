@@ -17,6 +17,7 @@ HOW TO USE:
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 import urllib.parse
@@ -90,11 +91,12 @@ def send_all():
         driver.get(url)
 
         try:
-            send_btn = WebDriverWait(driver, LOAD_WAIT).until(
-                EC.element_to_be_clickable((By.CSS_SELECTOR, '[data-testid="send"]'))
+            # Wait for the message input box to appear with the pre-filled text
+            msg_box = WebDriverWait(driver, LOAD_WAIT).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, '[data-testid="conversation-compose-box-input"]'))
             )
-            time.sleep(2)  # Let message fully appear in the text box
-            send_btn.click()
+            time.sleep(2)  # Let the message finish loading into the box
+            msg_box.send_keys(Keys.ENTER)  # Enter sends the message
             time.sleep(2)  # Wait for the message to actually send
             print("Sent!")
             sent += 1
