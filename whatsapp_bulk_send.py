@@ -35,8 +35,7 @@ CHROME_PROFILE_PATH = os.path.join(os.path.expanduser("~"), "whatsapp_sender_pro
 # Singapore numbers — 8 digits, no country code
 # +65 is added automatically
 PHONE_NUMBERS = [
-    "91234567",
-    "81234567",
+    "88595363",
     # add all 27 numbers here, one per line, in quotes with a comma
 ]
 
