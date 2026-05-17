@@ -63,9 +63,13 @@ def load_numbers_from_excel(filepath, sheet, column, has_header, country_code):
         cell_value = row[0].value
         if cell_value is None:
             continue
+        # If Excel stored the number as a numeric type (int/float), cast to int
+        # first to avoid "7911123456.0" becoming "79111234560" after digit filter
+        if isinstance(cell_value, float):
+            cell_value = int(cell_value)
         # Strip spaces, dashes, brackets — keep digits only
         digits = "".join(filter(str.isdigit, str(cell_value)))
-        # Remove a leading zero (common in local UK/Irish numbers e.g. 07911...)
+        # Remove a leading zero (common in local numbers e.g. 07911...)
         if digits.startswith("0"):
             digits = digits[1:]
         if digits:
