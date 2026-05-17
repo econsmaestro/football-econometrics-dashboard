@@ -8,10 +8,12 @@ SETUP (one time):
     pip install openpyxl
 
 HOW TO USE:
-1. Log into WhatsApp Web in your browser (web.whatsapp.com) and keep it open
-2. Fill in the settings below (Excel file path, column, country code, message)
-3. Run:  python whatsapp_bulk_send.py
-4. For each contact a browser tab opens with the message pre-typed
+1. Copy the Excel file from the ops support net laptop to a USB drive,
+   then transfer it to your internet-connected laptop
+2. Log into WhatsApp Web in your browser (web.whatsapp.com) and keep it open
+3. Fill in the settings below (Excel file path, column, message)
+4. Run:  python whatsapp_bulk_send.py
+5. For each contact a browser tab opens with the message pre-typed
    — just click Send, come back, and the next one opens automatically
 """
 
@@ -36,8 +38,7 @@ NUMBER_COLUMN = "A"
 HAS_HEADER = True
 
 # Country code to add to every number (digits only, no + sign)
-# e.g. "44" for UK, "1" for US/Canada, "353" for Ireland, "234" for Nigeria
-COUNTRY_CODE = "44"
+COUNTRY_CODE = "65"  # Singapore
 
 # Your message — you can use multiple lines
 MESSAGE = """Hello! Please replace this with your actual message.
