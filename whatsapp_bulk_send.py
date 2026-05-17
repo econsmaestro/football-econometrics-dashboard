@@ -1,89 +1,115 @@
 """
 WhatsApp Bulk Messenger
 -----------------------
-Sends the same message to multiple contacts by opening pre-filled
-WhatsApp Web links in your browser.
+Reads phone numbers from an Excel file and sends the same WhatsApp
+message to each contact by opening pre-filled WhatsApp Web links.
+
+SETUP (one time):
+    pip install openpyxl
 
 HOW TO USE:
-1. Make sure you are already logged into WhatsApp Web in your browser
-   (go to web.whatsapp.com and scan the QR code once — it stays logged in)
-2. Edit the PHONE_NUMBERS list below with all 27 numbers (include country code, no + or spaces)
-3. Edit the MESSAGE below with your message
-4. Run:  python whatsapp_bulk_send.py
-5. For each contact a browser tab will open — click "Send" (the arrow button), then come back
-   The script waits for you between each one
+1. Log into WhatsApp Web in your browser (web.whatsapp.com) and keep it open
+2. Fill in the settings below (Excel file path, column, country code, message)
+3. Run:  python whatsapp_bulk_send.py
+4. For each contact a browser tab opens with the message pre-typed
+   — just click Send, come back, and the next one opens automatically
 """
 
 import webbrowser
 import urllib.parse
 import time
+import openpyxl
 
 # ── EDIT THESE ──────────────────────────────────────────────────────────────
 
-# Phone numbers with country code, digits only (no +, spaces, or dashes)
-# Example: "447911123456" for a UK number +44 7911 123456
-PHONE_NUMBERS = [
-    "447911000001",
-    "447911000002",
-    "447911000003",
-    "447911000004",
-    "447911000005",
-    "447911000006",
-    "447911000007",
-    "447911000008",
-    "447911000009",
-    "447911000010",
-    "447911000011",
-    "447911000012",
-    "447911000013",
-    "447911000014",
-    "447911000015",
-    "447911000016",
-    "447911000017",
-    "447911000018",
-    "447911000019",
-    "447911000020",
-    "447911000021",
-    "447911000022",
-    "447911000023",
-    "447911000024",
-    "447911000025",
-    "447911000026",
-    "447911000027",
-]
+# Path to your Excel file — use the full path or put the file in the same
+# folder as this script and just write the filename, e.g. "contacts.xlsx"
+EXCEL_FILE = "contacts.xlsx"
 
+# Which sheet tab contains the numbers (name or 1-based index)
+SHEET = 1
+
+# Which column has the phone numbers — "A", "B", etc.
+NUMBER_COLUMN = "A"
+
+# Does the first row have a header (column title)? True = skip row 1
+HAS_HEADER = True
+
+# Country code to add to every number (digits only, no + sign)
+# e.g. "44" for UK, "1" for US/Canada, "353" for Ireland, "234" for Nigeria
+COUNTRY_CODE = "44"
+
+# Your message — you can use multiple lines
 MESSAGE = """Hello! Please replace this with your actual message.
 
-You can use multiple lines.
+You can use multiple lines here.
 """
 
-# Seconds to wait between opening each tab (gives you time to click Send)
+# Seconds to wait between tabs — enough time for you to click Send
 DELAY_SECONDS = 15
 
 # ── DO NOT EDIT BELOW THIS LINE ─────────────────────────────────────────────
 
-def build_url(phone: str, message: str) -> str:
+def load_numbers_from_excel(filepath, sheet, column, has_header, country_code):
+    wb = openpyxl.load_workbook(filepath, data_only=True)
+    ws = wb[sheet] if isinstance(sheet, str) else wb.worksheets[sheet - 1]
+
+    numbers = []
+    col_letter = column.upper()
+    start_row = 2 if has_header else 1
+
+    for row in ws.iter_rows(min_row=start_row, min_col=openpyxl.utils.column_index_from_string(col_letter),
+                             max_col=openpyxl.utils.column_index_from_string(col_letter)):
+        cell_value = row[0].value
+        if cell_value is None:
+            continue
+        # Strip spaces, dashes, brackets — keep digits only
+        digits = "".join(filter(str.isdigit, str(cell_value)))
+        # Remove a leading zero (common in local UK/Irish numbers e.g. 07911...)
+        if digits.startswith("0"):
+            digits = digits[1:]
+        if digits:
+            numbers.append(country_code + digits)
+
+    return numbers
+
+
+def build_url(phone, message):
     encoded = urllib.parse.quote(message)
     return f"https://web.whatsapp.com/send?phone={phone}&text={encoded}"
 
 
 def main():
-    total = len(PHONE_NUMBERS)
-    print(f"WhatsApp Bulk Sender — {total} contacts")
-    print("Make sure you are logged into WhatsApp Web in your browser first!\n")
-    input("Press Enter when ready to start...")
+    print("Reading numbers from Excel...")
+    try:
+        numbers = load_numbers_from_excel(EXCEL_FILE, SHEET, NUMBER_COLUMN, HAS_HEADER, COUNTRY_CODE)
+    except FileNotFoundError:
+        print(f"ERROR: Could not find '{EXCEL_FILE}'. Check the path and try again.")
+        return
 
-    for i, number in enumerate(PHONE_NUMBERS, start=1):
+    if not numbers:
+        print("ERROR: No numbers found. Check SHEET, NUMBER_COLUMN, and HAS_HEADER settings.")
+        return
+
+    total = len(numbers)
+    print(f"Found {total} numbers.\n")
+    print("Preview (first 5):")
+    for n in numbers[:5]:
+        print(f"  +{n}")
+    print()
+
+    input(f"Press Enter to start sending (make sure WhatsApp Web is open in your browser)...")
+
+    for i, number in enumerate(numbers, start=1):
         url = build_url(number, MESSAGE)
-        print(f"[{i}/{total}] Opening chat for {number} ...")
+        print(f"[{i}/{total}] Opening chat for +{number} ...")
         webbrowser.open(url)
 
         if i < total:
-            print(f"         -> Click Send in the browser tab, then wait.")
-            print(f"         -> Next contact opens in {DELAY_SECONDS} seconds...\n")
+            print(f"         -> Click Send, then wait {DELAY_SECONDS}s for the next one.\n")
             time.sleep(DELAY_SECONDS)
 
-    print("\nAll done! All contacts have been opened.")
+    print("\nAll done!")
 
 
 if __name__ == "__main__":
