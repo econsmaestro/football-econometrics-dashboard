@@ -1,17 +1,17 @@
 """
 WhatsApp Bulk Messenger
 -----------------------
-Automatically sends a WhatsApp message to every number in the list
-using Selenium to control Chrome — no manual clicking needed.
+Automatically sends a WhatsApp message to every contact name in the list
+by searching for them in WhatsApp Web — no phone numbers needed.
 
 SETUP (one time):
     pip install selenium
 
 HOW TO USE:
-1. Close Chrome completely first (important!)
-2. Find your Chrome profile path and paste it into CHROME_PROFILE_PATH below
-3. Fill in PHONE_NUMBERS and MESSAGE
-4. Run all cells, then call send_all()
+1. Fill in CONTACT_NAMES and MESSAGE below
+2. Names must match exactly how they appear in your WhatsApp contacts
+3. Run all cells — first time only, scan the QR code in the Chrome window
+   (after that your login is saved, no QR on future runs)
 """
 
 from selenium import webdriver
@@ -20,23 +20,17 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-import urllib.parse
 import time
+import os
 
 # ── EDIT THESE ──────────────────────────────────────────────────────────────
 
-# A dedicated profile folder just for this script.
-# It is created automatically on first run — you do NOT need to change this.
-# First run: WhatsApp Web will ask you to scan a QR code once.
-# Every run after that: it remembers your login, no QR needed.
-import os
 CHROME_PROFILE_PATH = os.path.join(os.path.expanduser("~"), "whatsapp_sender_profile")
 
-# Singapore numbers — 8 digits, no country code
-# +65 is added automatically
-PHONE_NUMBERS = [
-    "88595363",
-    # add all 27 numbers here, one per line, in quotes with a comma
+# Names exactly as they appear in your WhatsApp contacts
+CONTACT_NAMES = [
+    "John Smith",
+    # add all 27 names here, one per line, in quotes with a comma
 ]
 
 MESSAGE = """Hello! Replace this with your actual message.
@@ -44,29 +38,62 @@ MESSAGE = """Hello! Replace this with your actual message.
 You can use multiple lines.
 """
 
-# Seconds to wait for WhatsApp Web to load each chat (increase if your
-# internet is slow — 15 is safe, 10 is usually fine)
+# Seconds to wait for search results and chat to load
 LOAD_WAIT = 15
 
 # ── DO NOT EDIT BELOW THIS LINE ─────────────────────────────────────────────
 
-COUNTRY_CODE = "65"
+def type_message(msg_box, message):
+    # Send line by line — Shift+Enter for newlines, Enter to send at the end
+    lines = message.strip().split('\n')
+    for i, line in enumerate(lines):
+        msg_box.send_keys(line)
+        if i < len(lines) - 1:
+            msg_box.send_keys(Keys.SHIFT, Keys.RETURN)
 
 
-def build_url(phone):
-    full_number = COUNTRY_CODE + phone.strip()
-    encoded = urllib.parse.quote(MESSAGE)
-    return f"https://web.whatsapp.com/send?phone={full_number}&text={encoded}"
+def send_to_contact(driver, name):
+    # Open the search box
+    search_btn = WebDriverWait(driver, LOAD_WAIT).until(
+        EC.element_to_be_clickable((By.CSS_SELECTOR, '[data-testid="chat-list-search"]'))
+    )
+    search_btn.click()
+
+    # Type the contact name
+    search_input = WebDriverWait(driver, LOAD_WAIT).until(
+        EC.presence_of_element_located((By.CSS_SELECTOR, '[data-testid="search-input"]'))
+    )
+    search_input.clear()
+    search_input.send_keys(name)
+    time.sleep(2)  # Wait for results to appear
+
+    # Click the first result
+    first_result = WebDriverWait(driver, LOAD_WAIT).until(
+        EC.element_to_be_clickable((By.CSS_SELECTOR, '[data-testid="cell-frame-container"]'))
+    )
+    first_result.click()
+
+    # Wait for the chat compose box to appear
+    msg_box = WebDriverWait(driver, LOAD_WAIT).until(
+        EC.presence_of_element_located((By.CSS_SELECTOR, '[data-testid="conversation-compose-box-input"]'))
+    )
+    time.sleep(1)
+
+    # Type message and send
+    type_message(msg_box, MESSAGE)
+    time.sleep(1)
+    msg_box.send_keys(Keys.RETURN)
+    time.sleep(2)
 
 
 def send_all():
-    total = len(PHONE_NUMBERS)
+    total = len(CONTACT_NAMES)
     if total == 0:
-        print("ERROR: PHONE_NUMBERS list is empty.")
+        print("ERROR: CONTACT_NAMES list is empty.")
         return
 
     print(f"WhatsApp Bulk Sender — {total} contacts")
-    print("Opening a separate Chrome window for this script...")
+    print("Opening Chrome...")
 
     options = Options()
     options.add_argument(f"--user-data-dir={CHROME_PROFILE_PATH}")
@@ -84,30 +111,23 @@ def send_all():
     sent = 0
     failed = []
 
-    for i, number in enumerate(PHONE_NUMBERS, start=1):
-        url = build_url(number)
-        print(f"[{i}/{total}] Sending to +{COUNTRY_CODE}{number.strip()} ...", end=" ")
-        driver.get(url)
-
+    for i, name in enumerate(CONTACT_NAMES, start=1):
+        print(f"[{i}/{total}] Sending to '{name}' ...", end=" ")
         try:
-            # Wait for the message input box to appear with the pre-filled text
-            msg_box = WebDriverWait(driver, LOAD_WAIT).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, '[data-testid="conversation-compose-box-input"]'))
-            )
-            time.sleep(2)  # Let the message finish loading into the box
-            msg_box.send_keys(Keys.ENTER)  # Enter sends the message
-            time.sleep(2)  # Wait for the message to actually send
+            send_to_contact(driver, name)
             print("Sent!")
             sent += 1
         except Exception:
-            print("FAILED — chat did not load in time. Check the number.")
-            failed.append(number)
+            print(f"FAILED — '{name}' not found or chat did not load.")
+            failed.append(name)
+            # Press Escape to close any open search/chat and reset state
+            driver.find_element(By.TAG_NAME, "body").send_keys(Keys.ESCAPE)
+            time.sleep(1)
 
     driver.quit()
     print(f"\nDone — {sent}/{total} sent.")
     if failed:
-        print(f"Failed numbers: {failed}")
+        print(f"Failed contacts: {failed}")
 
 
-# In Jupyter, this line actually runs it:
-# send_all()
+send_all()
