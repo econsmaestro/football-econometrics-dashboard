@@ -1,7 +1,7 @@
 modules = ["python-3.11", "python3", "nodejs-20", "postgresql-16"]
 [deployment]
 deploymentTarget = "autoscale"
-run = ["streamlit", "run", "app.py", "--server.port", "5000"]
+run = ["sh", "-c", "python3 seo_patch.py 2>/dev/null; streamlit run app.py --server.port 5000"]
 
 [nix]
 channel = "stable-25_05"
