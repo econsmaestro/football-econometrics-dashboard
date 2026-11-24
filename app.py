@@ -1384,7 +1384,7 @@ if nav_page == "AI Scout":
                 ),
                 "Accept-Language": "en-GB,en;q=0.9",
             }
-            resp = requests.get(search_url, headers=hdrs, timeout=8)
+            resp = requests.get(search_url, headers=hdrs, timeout=4)
             soup_s = BeautifulSoup(resp.text, "html.parser")
             results = []
             for result in soup_s.select(".result")[:max_snippets]:
@@ -1610,7 +1610,9 @@ if nav_page == "AI Scout":
             # Step 1: fetch live web context — always search the user query,
             # then add a targeted standings search if any major league is mentioned
             with st.spinner("Searching for latest data…"):
-                web_snippets = _search_football_context(user_input)
+                from concurrent.futures import ThreadPoolExecutor
+                _pool = ThreadPoolExecutor(max_workers=2)
+                _main_future = _pool.submit(_search_football_context, user_input)
 
                 _now = datetime.utcnow()
                 _yr  = _now.year
@@ -1665,8 +1667,14 @@ if nav_page == "AI Scout":
                     if not _bonus_query:
                         _bonus_query = f"Premier League table {_split_season} current standings"
 
-                    extra = _search_football_context(_bonus_query, max_snippets=6)
-                    web_snippets = web_snippets + extra
+                    _bonus_future = _pool.submit(_search_football_context, _bonus_query, 6)
+                else:
+                    _bonus_future = None
+
+                web_snippets = _main_future.result()
+                if _bonus_future is not None:
+                    web_snippets = web_snippets + _bonus_future.result()
+                _pool.shutdown(wait=False)
 
             # Step 2: fetch user memory + build dynamic system prompt
             _today_str = _now.strftime("%B %d, %Y")
@@ -1831,32 +1839,46 @@ if nav_page == "AI Scout":
                 api_messages.append({"role": prev["role"], "content": prev["content"]})
             api_messages.append({"role": "user", "content": user_content})
 
-            # Step 3: call the AI
-            with st.spinner("Thinking…"):
-                reply = None
+            # Step 3: call the AI (streamed so text appears as soon as it starts)
+            def _stream_reply():
                 _last_exc = None
                 for _attempt in range(3):
+                    _got_text = False
                     try:
-                        response = _client.chat.completions.create(
+                        _stream = _client.chat.completions.create(
                             model=_MODEL,
                             messages=api_messages,
                             max_completion_tokens=1024,
+                            stream=True,
                         )
-                        reply = response.choices[0].message.content
-                        break
+                        for _chunk in _stream:
+                            if not _chunk.choices:
+                                continue
+                            _piece = _chunk.choices[0].delta.content
+                            if _piece:
+                                _got_text = True
+                                yield _piece
+                        if _got_text:
+                            return
+                        _last_exc = RuntimeError("empty response")
                     except Exception as exc:
+                        if _got_text:
+                            return  # keep the partial answer
                         _last_exc = exc
-                        print(f"[AI Scout] attempt {_attempt + 1} failed: {exc!r}", flush=True)
-                        _m = str(exc).lower()
-                        if any(k in _m for k in ("401", "403", "unauthorized", "forbidden")):
-                            break
-                        time.sleep(1.5 * (_attempt + 1))
-                if reply is not None:
-                    _increment_scout_usage(_uid, _week_key)
-                    _update_user_memory(_uid, user_input)
-                else:
-                    reply = _friendly_ai_error(_last_exc)
-            st.markdown(reply)
+                    print(f"[AI Scout] attempt {_attempt + 1} failed: {_last_exc!r}", flush=True)
+                    _m = str(_last_exc).lower()
+                    if any(k in _m for k in ("401", "403", "unauthorized", "forbidden")):
+                        break
+                    time.sleep(1.0 * (_attempt + 1))
+                _stream_reply.failed = _last_exc
+                yield _friendly_ai_error(_last_exc)
+
+            _stream_reply.failed = None
+            with st.spinner("Thinking…"):
+                reply = st.write_stream(_stream_reply())
+            if _stream_reply.failed is None:
+                _increment_scout_usage(_uid, _week_key)
+                _update_user_memory(_uid, user_input)
 
         st.session_state.ai_scout_messages.append({"role": "assistant", "content": reply})
         st.rerun()  # refresh so the attach row at the top resets
