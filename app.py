@@ -1466,26 +1466,30 @@ if nav_page == "AI Scout":
         border-radius: 8px !important;
         color: white !important;
     }
-    /* Controls bar pinned just above the chat input, always visible */
+    /* Compact controls bar pinned just above the chat input */
     .st-key-scout_controls {
         position: fixed !important;
-        bottom: 100px !important;
+        bottom: 112px !important;
         left: 0; right: 0;
         z-index: 100 !important;
-        padding: 6px 1rem !important;
-        background: #0e1117 !important;
+        padding: 2px 1rem !important;
         max-width: 736px;
         margin: 0 auto;
-        max-height: 60vh;
+        max-height: 50vh;
         overflow-y: auto;
+        background: transparent !important;
+        pointer-events: none;
     }
-    /* keep clear button and attach side-by-side even on narrow phones */
+    .st-key-scout_controls * { pointer-events: auto; }
     .st-key-scout_controls [data-testid="stHorizontalBlock"] {
         flex-wrap: nowrap !important;
-        gap: 0.5rem !important;
+        gap: 0.4rem !important;
+        width: auto !important;
     }
-    .st-key-scout_controls [data-testid="stColumn"] { min-width: 0 !important; }
-    .st-key-scout_controls [data-testid="stColumn"]:first-child { flex: 0 0 52px !important; width: 52px !important; }
+    .st-key-scout_controls [data-testid="stColumn"] { min-width: 0 !important; width: auto !important; flex: 0 0 auto !important; }
+    .st-key-scout_controls button { min-height: 30px !important; padding: 0 10px !important; }
+    .st-key-scout_controls [data-testid="stExpander"] { background: #0e1117; border-radius: 8px; }
+    .st-key-scout_controls [data-testid="stExpander"] summary { padding: 4px 10px !important; font-size: 0.8rem !important; }
     /* Disclaimer below chatbox */
     section[data-testid="stBottom"]::after {
         content: "⚠️  AI-generated content — always verify facts from official sources before trusting AI.";
@@ -1495,7 +1499,7 @@ if nav_page == "AI Scout":
         text-align: center;
         padding: 2px 16px 5px;
     }
-    .main .block-container { padding-bottom: 190px !important; }
+    .main .block-container { padding-bottom: 200px !important; }
     </style>
     """, unsafe_allow_html=True)
 
