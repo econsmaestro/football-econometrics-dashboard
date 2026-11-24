@@ -1353,8 +1353,9 @@ if nav_page == "AI Scout":
             )
         if "resource_exhausted" in msg or "quota" in msg or "exhausted" in msg:
             return (
-                "The AI has reached its daily free usage limit. It resets within about a day — "
-                "your message has not been counted against your weekly limit."
+                "⚠️ The AI Scout has used up its free daily usage allowance, so it can't answer right now. "
+                "This isn't caused by anything you did — the allowance resets automatically within about 24 hours, "
+                "so please try again later. Your message was not counted against your weekly limit."
             )
         if "429" in msg or "rate_limit" in msg or "rate limit" in msg or "too many requests" in msg:
             return (
@@ -1853,10 +1854,12 @@ if nav_page == "AI Scout":
             # Step 3: call the AI (streamed so text appears as soon as it starts)
             def _stream_reply():
                 _last_exc = None
+                _quota_hit = False
                 _now_ts = time.time()
                 for _model in _MODELS:
                     # skip models that recently ran out of quota
                     if _EXHAUSTED.get(_model, 0) > _now_ts:
+                        _quota_hit = True
                         continue
                     for _attempt in range(2):
                         _got_text = False
@@ -1885,6 +1888,7 @@ if nav_page == "AI Scout":
                         _m = str(_last_exc).lower()
                         if "429" in _m or "resource_exhausted" in _m or "quota" in _m:
                             _EXHAUSTED[_model] = time.time() + 3600  # try again in an hour
+                            _quota_hit = True
                             break  # next model
                         if "404" in _m or "not found" in _m or "not_found" in _m:
                             _EXHAUSTED[_model] = time.time() + 3600
@@ -1894,7 +1898,9 @@ if nav_page == "AI Scout":
                             yield _friendly_ai_error(_last_exc)
                             return
                         time.sleep(1.0 * (_attempt + 1))
-                _stream_reply.failed = _last_exc or RuntimeError("429 all models exhausted")
+                if _quota_hit:
+                    _last_exc = RuntimeError("429 RESOURCE_EXHAUSTED: all models out of quota")
+                _stream_reply.failed = _last_exc or RuntimeError("no model available")
                 yield _friendly_ai_error(_stream_reply.failed)
 
             _stream_reply.failed = None
