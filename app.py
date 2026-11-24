@@ -18,6 +18,7 @@ from scipy import stats
 import psycopg2
 import os
 import uuid
+import json
 import time
 from datetime import datetime, timedelta
 from models import load_fallback_data, load_fallback_penalty_data
@@ -454,6 +455,17 @@ def init_db():
             query_count INTEGER DEFAULT 0,
             last_seen TIMESTAMP DEFAULT NOW()
         );
+        CREATE TABLE IF NOT EXISTS user_prefs (
+            uid VARCHAR(64) PRIMARY KEY,
+            league VARCHAR(100),
+            seasons JSONB DEFAULT '{}'::jsonb,
+            updated_at TIMESTAMP DEFAULT NOW()
+        );
+        CREATE TABLE IF NOT EXISTS ai_answer_cache (
+            cache_key VARCHAR(64) PRIMARY KEY,
+            answer TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT NOW()
+        );
         CREATE TABLE IF NOT EXISTS user_query_log (
             id SERIAL PRIMARY KEY,
             uid VARCHAR(64) NOT NULL,
@@ -594,6 +606,91 @@ def record_visit(session_id, page_name):
         pass
 
 
+def load_user_prefs(uid):
+    """Saved league + per-league season for this visitor ({} if none)."""
+    try:
+        conn = get_db_conn()
+        cur = conn.cursor()
+        cur.execute("SELECT league, seasons FROM user_prefs WHERE uid = %s", (uid,))
+        row = cur.fetchone()
+        cur.close()
+        conn.close()
+        if row:
+            return {"league": row[0], "seasons": row[1] or {}}
+    except Exception:
+        pass
+    return {}
+
+
+def save_user_prefs(uid, league, season=None):
+    try:
+        conn = get_db_conn()
+        cur = conn.cursor()
+        seasons_patch = json.dumps({league: season}) if season is not None else "{}"
+        cur.execute(
+            """
+            INSERT INTO user_prefs (uid, league, seasons, updated_at)
+            VALUES (%s, %s, %s::jsonb, NOW())
+            ON CONFLICT (uid) DO UPDATE SET
+                league = EXCLUDED.league,
+                seasons = user_prefs.seasons || EXCLUDED.seasons,
+                updated_at = NOW()
+            """,
+            (uid, league, seasons_patch),
+        )
+        conn.commit()
+        cur.close()
+        conn.close()
+    except Exception:
+        pass
+
+
+def _answer_cache_key(question):
+    import re as _re
+    norm = _re.sub(r"[^a-z0-9 ]+", " ", question.lower())
+    norm = " ".join(norm.split())
+    return hashlib.sha256(norm.encode()).hexdigest() if norm else None
+
+
+def get_cached_answer(question, ttl_seconds=86400):
+    key = _answer_cache_key(question)
+    if not key:
+        return None
+    try:
+        conn = get_db_conn()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT answer FROM ai_answer_cache WHERE cache_key = %s "
+            "AND created_at > NOW() - make_interval(secs => %s)",
+            (key, ttl_seconds),
+        )
+        row = cur.fetchone()
+        cur.close()
+        conn.close()
+        return row[0] if row else None
+    except Exception:
+        return None
+
+
+def save_cached_answer(question, answer):
+    key = _answer_cache_key(question)
+    if not key or not answer:
+        return
+    try:
+        conn = get_db_conn()
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO ai_answer_cache (cache_key, answer, created_at) VALUES (%s, %s, NOW()) "
+            "ON CONFLICT (cache_key) DO UPDATE SET answer = EXCLUDED.answer, created_at = NOW()",
+            (key, answer),
+        )
+        conn.commit()
+        cur.close()
+        conn.close()
+    except Exception:
+        pass
+
+
 def check_recent_submission(username):
     """Returns True if this username submitted a review in the last hour."""
     try:
@@ -706,6 +803,47 @@ def get_analytics_data():
 
 if "session_id" not in st.session_state:
     st.session_state.session_id = str(uuid.uuid4())
+
+
+def _ensure_uid():
+    """Stable anonymous visitor id: kept in session state, the URL, and (below) the browser."""
+    if "scout_uid" not in st.session_state:
+        _u = st.query_params.get("uid", None)
+        if not _u:
+            _u = str(uuid.uuid4())
+            st.query_params["uid"] = _u
+        st.session_state.scout_uid = _u
+    elif "uid" not in st.query_params:
+        st.query_params["uid"] = st.session_state.scout_uid
+    return st.session_state.scout_uid
+
+
+_VISITOR_UID = _ensure_uid()
+
+# Remember the visitor across visits: keep their id in browser storage and, if they
+# arrive on a bare link, switch to the id they used before (once per session).
+if not st.session_state.get("_uid_synced"):
+    st.session_state["_uid_synced"] = True
+    _uid_js = """
+    (function () {
+      try {
+        var cur = "__UID__", k = "fe_visitor_uid";
+        var saved = localStorage.getItem(k);
+        if (saved && saved !== cur && /^[0-9a-f-]{36}$/.test(saved)) {
+          var u = new URL(window.location.href);
+          u.searchParams.set("uid", saved);
+          window.location.replace(u.toString());
+        } else if (!saved) {
+          localStorage.setItem(k, cur);
+        }
+      } catch (e) {}
+    })();
+    """.replace("__UID__", _VISITOR_UID)
+    try:
+        # runs in the app page itself (not an iframe), so it can read the URL and storage
+        st.html(f"<script>{_uid_js}</script>", unsafe_allow_javascript=True)
+    except TypeError:
+        pass  # older Streamlit without JS support in st.html: skip the cross-visit sync
 
 if "current_page" not in st.session_state:
     st.session_state.current_page = "home"
@@ -828,12 +966,26 @@ with st.sidebar:
     _is_loading = st.session_state.get("_data_loading", False)
 
     # Restore league from URL query params
-    _qp_league = st.query_params.get("league", "Premier League")
+    if "_prefs_init" not in st.session_state:
+        st.session_state["_prefs_init"] = load_user_prefs(_VISITOR_UID)
+        st.session_state["_prefs_saved"] = {}
+    _prefs_init = st.session_state["_prefs_init"]
+    _qp_league = (
+        st.query_params.get("league")
+        or _prefs_init.get("league")
+        or "Premier League"
+    )
     _league_idx = LEAGUE_OPTIONS.index(_qp_league) if _qp_league in LEAGUE_OPTIONS else 0
     selected_league = st.selectbox("Competition", LEAGUE_OPTIONS, index=_league_idx, format_func=_format_league, disabled=_is_loading)
     if st.query_params.get("league") != selected_league:
         st.query_params["league"] = selected_league
     league_cfg = LEAGUE_CONFIG[selected_league]
+    # Remember what the visitor picks. The first value shown in a session is just the
+    # starting point (not a choice), so only later changes are written to the database.
+    _prev_league = st.session_state["_prefs_saved"].get("league")
+    st.session_state["_prefs_saved"]["league"] = selected_league
+    if _prev_league is not None and _prev_league != selected_league:
+        save_user_prefs(_VISITOR_UID, selected_league)
 
     _LOGO_OVERRIDES = {
         "PE1N": "pe1n",
@@ -883,10 +1035,12 @@ with st.sidebar:
         if league_cfg["season_type"] == "split":
             first_season_val = league_cfg["start_year"] + 1
             all_seasons = list(range(first_season_val, CURRENT_SEASON_END + 1))
+            _saved_season = (_prefs_init.get("seasons") or {}).get(selected_league)
+            _season_idx = all_seasons.index(_saved_season) if _saved_season in all_seasons else len(all_seasons) - 1
             season = st.selectbox(
                 "Season (end year)",
                 options=all_seasons,
-                index=len(all_seasons) - 1,
+                index=_season_idx,
                 format_func=lambda y: f"{y - 1}-{str(y)[2:]}",
                 disabled=_is_loading,
             )
@@ -894,12 +1048,20 @@ with st.sidebar:
             first_season_val = league_cfg["start_year"]
             current_cal = CURRENT_SEASON_END - 1
             all_seasons = list(range(first_season_val, current_cal + 1))
+            _saved_season = (_prefs_init.get("seasons") or {}).get(selected_league)
+            _season_idx = all_seasons.index(_saved_season) if _saved_season in all_seasons else len(all_seasons) - 1
             season = st.selectbox(
                 "Season",
                 options=all_seasons,
-                index=len(all_seasons) - 1,
+                index=_season_idx,
                 disabled=_is_loading,
             )
+
+        _season_key = f"{selected_league}|season"
+        _prev_season = st.session_state["_prefs_saved"].get(_season_key)
+        st.session_state["_prefs_saved"][_season_key] = season
+        if _prev_season is not None and _prev_season != season:
+            save_user_prefs(_VISITOR_UID, selected_league, int(season))
 
         st.divider()
         st.subheader("Multi-Season Analysis")
@@ -1278,17 +1440,7 @@ if nav_page == "AI Scout":
 
     _WEEKLY_LIMIT = 30
 
-    # ── Persistent UID — session state survives rerun, query param survives refresh
-    if "scout_uid" not in st.session_state:
-        _uid = st.query_params.get("uid", None)
-        if not _uid:
-            _uid = str(uuid.uuid4())
-            st.query_params["uid"] = _uid
-        st.session_state.scout_uid = _uid
-    else:
-        _uid = st.session_state.scout_uid
-        if "uid" not in st.query_params:
-            st.query_params["uid"] = _uid
+    _uid = _VISITOR_UID
 
     # ── Week key: ISO week (Mon–Sun), UTC ────────────────────────────────────
     def _current_week_key():
@@ -1534,6 +1686,28 @@ if nav_page == "AI Scout":
         except Exception:
             return []
 
+    _STANDING_KEYWORDS = [
+                        "table", "standing", "position", "relegat", "top four", "top 4",
+                        "champion", "title", "europe", "european", "ucl", "top of",
+                        "bottom of", "how are", "where are", "season", "league",
+                        "premier league", "la liga", "bundesliga", "serie a", "ligue 1",
+                        "win the league", "win the title", "can they win", "points behind",
+                        "points gap", "games left", "games remaining", "mathematically",
+                        "race", "still in it", "overtake", "catch up", "drop points",
+                        "unbeaten", "form", "run in", "fixtures left",
+                    ]
+
+    def _is_cacheable_question(q, n_messages, has_images):
+        """Only generic, first-in-chat, image-free questions that need no live data."""
+        if has_images or n_messages != 1 or len(q) < 8:
+            return False
+        ql = q.lower()
+        if any(k in ql for k in _STANDING_KEYWORDS):
+            return False
+        if any(t in ql for t in _TEAM_LEAGUE_MAP):
+            return False
+        return True
+
     # ── Usage check ──────────────────────────────────────────────────────────
     _week_key = _current_week_key()
     _stored_week, _used_count = _get_scout_usage(_uid)
@@ -1728,6 +1902,16 @@ if nav_page == "AI Scout":
         st.session_state.scout_images = []
         st.session_state.scout_upload_key += 1
 
+        _cache_q = user_input if _is_cacheable_question(
+            user_input, len(st.session_state.ai_scout_messages), bool(_imgs)
+        ) else None
+        if _cache_q:
+            _cached_reply = get_cached_answer(_cache_q)
+            if _cached_reply:
+                # Same question answered recently: reuse it (no AI call, no quota used)
+                st.session_state.ai_scout_messages.append({"role": "assistant", "content": _cached_reply})
+                st.rerun()
+
         with st.chat_message("assistant"):
             # Step 1: fetch live web context — always search the user query,
             # then add a targeted standings search if any major league is mentioned
@@ -1743,16 +1927,7 @@ if nav_page == "AI Scout":
                 _cal_season   = str(_yr)
 
                 # Detect if the question touches league standings / positions / title race
-                _standing_keywords = [
-                    "table", "standing", "position", "relegat", "top four", "top 4",
-                    "champion", "title", "europe", "european", "ucl", "top of",
-                    "bottom of", "how are", "where are", "season", "league",
-                    "premier league", "la liga", "bundesliga", "serie a", "ligue 1",
-                    "win the league", "win the title", "can they win", "points behind",
-                    "points gap", "games left", "games remaining", "mathematically",
-                    "race", "still in it", "overtake", "catch up", "drop points",
-                    "unbeaten", "form", "run in", "fixtures left",
-                ]
+                _standing_keywords = _STANDING_KEYWORDS
                 _q_lower = user_input.lower()
                 _needs_standings = any(kw in _q_lower for kw in _standing_keywords)
 
@@ -2019,6 +2194,8 @@ if nav_page == "AI Scout":
             if _stream_reply.failed is None:
                 _increment_scout_usage(_uid, _week_key)
                 _update_user_memory(_uid, user_input)
+                if _cache_q:
+                    save_cached_answer(_cache_q, reply)
 
         st.session_state.ai_scout_messages.append({"role": "assistant", "content": reply})
         st.rerun()  # refresh so the attach row at the top resets
