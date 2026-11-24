@@ -1469,14 +1469,23 @@ if nav_page == "AI Scout":
     /* Controls bar pinned just above the chat input, always visible */
     .st-key-scout_controls {
         position: fixed !important;
-        bottom: 88px !important;
+        bottom: 100px !important;
         left: 0; right: 0;
         z-index: 100 !important;
         padding: 6px 1rem !important;
         background: #0e1117 !important;
         max-width: 736px;
         margin: 0 auto;
+        max-height: 60vh;
+        overflow-y: auto;
     }
+    /* keep clear button and attach side-by-side even on narrow phones */
+    .st-key-scout_controls [data-testid="stHorizontalBlock"] {
+        flex-wrap: nowrap !important;
+        gap: 0.5rem !important;
+    }
+    .st-key-scout_controls [data-testid="stColumn"] { min-width: 0 !important; }
+    .st-key-scout_controls [data-testid="stColumn"]:first-child { flex: 0 0 52px !important; width: 52px !important; }
     /* Disclaimer below chatbox */
     section[data-testid="stBottom"]::after {
         content: "⚠️  AI-generated content — always verify facts from official sources before trusting AI.";
@@ -1486,7 +1495,7 @@ if nav_page == "AI Scout":
         text-align: center;
         padding: 2px 16px 5px;
     }
-    .main .block-container { padding-bottom: 170px !important; }
+    .main .block-container { padding-bottom: 190px !important; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -1521,7 +1530,7 @@ if nav_page == "AI Scout":
         with _bu:
             _n_img = len(st.session_state.scout_images)
             _lbl = f"📎 Attach image ({_n_img})" if _n_img else "📎 Attach image"
-            with st.popover(_lbl, use_container_width=True):
+            with st.expander(_lbl):
                 for _i, (_, _, _nm) in enumerate(st.session_state.scout_images):
                     _c1, _c2 = st.columns([0.8, 0.2], vertical_alignment="center")
                     _c1.caption(f"📷 {_nm}")
