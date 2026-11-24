@@ -1432,7 +1432,7 @@ if nav_page == "AI Scout":
         else os.environ.get("AI_INTEGRATIONS_OPENAI_BASE_URL", "")
     )
     _MODEL = (
-        "gemini-2.0-flash"
+        "gemini-3.8-flash"
         if os.environ.get("GEMINI_API_KEY")
         else "gpt-4.1"
     )
@@ -1803,8 +1803,7 @@ if nav_page == "AI Scout":
                     _increment_scout_usage(_uid, _week_key)
                     _update_user_memory(_uid, user_input)
                 except Exception as exc:
-                    _raw = str(exc)
-                    reply = _friendly_ai_error(exc) + f"\n\n*(Debug: `{_raw[:300]}`)*"
+                    reply = _friendly_ai_error(exc)
             st.markdown(reply)
 
         st.session_state.ai_scout_messages.append({"role": "assistant", "content": reply})
