@@ -1425,10 +1425,21 @@ if nav_page == "AI Scout":
         _used_count = 0
     _remaining = max(0, _WEEKLY_LIMIT - _used_count)
 
-    # ── OpenAI client ────────────────────────────────────────────────────────
-    _BASE_URL = os.environ.get("AI_INTEGRATIONS_OPENAI_BASE_URL", "")
-    _API_KEY  = os.environ.get("AI_INTEGRATIONS_OPENAI_API_KEY", "")
-    _MODEL    = "gpt-4.1"
+    # ── AI client (Gemini via OpenAI-compatible endpoint; falls back to OpenAI) ─
+    _API_KEY = (
+        os.environ.get("GEMINI_API_KEY")
+        or os.environ.get("AI_INTEGRATIONS_OPENAI_API_KEY", "")
+    )
+    _BASE_URL = (
+        "https://generativelanguage.googleapis.com/v1beta/openai/"
+        if os.environ.get("GEMINI_API_KEY")
+        else os.environ.get("AI_INTEGRATIONS_OPENAI_BASE_URL", "")
+    )
+    _MODEL = (
+        "gemini-3.8-flash"
+        if os.environ.get("GEMINI_API_KEY")
+        else "gpt-4.1"
+    )
 
     if not _BASE_URL or not _API_KEY:
         st.error("The AI service is not currently configured. Please check back later.")
