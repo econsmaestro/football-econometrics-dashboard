@@ -1474,12 +1474,14 @@ if nav_page == "AI Scout":
     @media (max-width: 768px) {
         div[data-testid="stHorizontalBlock"]:has(div[data-testid="stFileUploader"]) {
             position: fixed !important;
-            bottom: 76px !important;
+            bottom: 60px !important;
             left: 0 !important;
             right: 0 !important;
-            padding: 4px 16px !important;
+            padding: 6px 16px !important;
             z-index: 200 !important;
+            box-shadow: 0 -2px 8px rgba(0,0,0,0.3) !important;
         }
+        .main .block-container { padding-bottom: 180px !important; }
     }
     /* Compact file uploader — hide drag-and-drop zone, keep Browse button */
     [data-testid="stFileUploaderDropzone"] {
@@ -1819,9 +1821,6 @@ if nav_page == "AI Scout":
         st.session_state.ai_scout_messages.append({"role": "assistant", "content": reply})
 
     # ── Attach row — always LAST so it sits just above the chat input ─────────
-    # Spacer keeps it near the bottom when no messages yet
-    if not st.session_state.ai_scout_messages:
-        st.markdown('<div style="min-height:35vh;"></div>', unsafe_allow_html=True)
 
     # Image chips
     _remove_idx = None
