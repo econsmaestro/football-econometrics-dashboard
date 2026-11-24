@@ -1442,7 +1442,7 @@ if nav_page == "AI Scout":
     )
     # Each Gemini model has its own free-tier daily quota, so try several in order.
     _MODELS = (
-        [m.strip() for m in os.environ.get("GEMINI_MODELS", "gemini-3.8-flash,gemini-2.5-flash,gemini-2.5-flash-lite").split(",") if m.strip()]
+        [m.strip() for m in os.environ.get("GEMINI_MODELS", "gemini-3.8-flash,gemini-3.5-flash-lite").split(",") if m.strip()]
         if os.environ.get("GEMINI_API_KEY")
         else ["gpt-4.1"]
     )
