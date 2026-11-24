@@ -1432,7 +1432,7 @@ if nav_page == "AI Scout":
         else os.environ.get("AI_INTEGRATIONS_OPENAI_BASE_URL", "")
     )
     _MODEL = (
-        "gemini-1.5-flash"
+        "gemini-2.0-flash"
         if os.environ.get("GEMINI_API_KEY")
         else "gpt-4.1"
     )
@@ -1467,9 +1467,24 @@ if nav_page == "AI Scout":
         position: sticky !important;
         bottom: 76px !important;
         z-index: 100 !important;
-        background: var(--background-color, #ffffff) !important;
+        background: var(--background-color, #0e1117) !important;
         padding: 4px 0 !important;
-        border-top: 1px solid rgba(0,0,0,0.06) !important;
+        border-top: 1px solid rgba(255,255,255,0.08) !important;
+    }
+    /* Compact file uploader — hide drag-and-drop zone, keep Browse button */
+    [data-testid="stFileUploaderDropzone"] {
+        padding: 6px 10px !important;
+        min-height: unset !important;
+    }
+    [data-testid="stFileUploaderDropzoneInstructions"] {
+        display: none !important;
+    }
+    [data-testid="stFileUploaderDropzone"] > div:first-child {
+        margin: 0 !important;
+    }
+    [data-testid="stFileUploader"] label {
+        font-size: 0.8rem !important;
+        margin-bottom: 2px !important;
     }
     /* Disclaimer below chatbox */
     section[data-testid="stBottom"]::after {
@@ -1782,7 +1797,7 @@ if nav_page == "AI Scout":
                     response = _client.chat.completions.create(
                         model=_MODEL,
                         messages=api_messages,
-                        max_completion_tokens=1024,
+                        max_tokens=1024,
                     )
                     reply = response.choices[0].message.content
                     _increment_scout_usage(_uid, _week_key)
