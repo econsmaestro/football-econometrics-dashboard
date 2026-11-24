@@ -501,16 +501,20 @@ def _db_cache_init():
     _DB_CACHE_READY = True
 
 
-def _db_cache_get(key, ttl):
+def _db_cache_get(key, ttl, allow_stale=False):
+    """Return the cached value, or None. With allow_stale, ignore the TTL."""
     try:
         _db_cache_init()
         conn = get_db_conn()
         cur = conn.cursor()
-        cur.execute(
-            "SELECT value FROM data_cache WHERE cache_key = %s "
-            "AND created_at > NOW() - make_interval(secs => %s)",
-            (key, ttl),
-        )
+        if allow_stale:
+            cur.execute("SELECT value FROM data_cache WHERE cache_key = %s", (key,))
+        else:
+            cur.execute(
+                "SELECT value FROM data_cache WHERE cache_key = %s "
+                "AND created_at > NOW() - make_interval(secs => %s)",
+                (key, ttl),
+            )
         row = cur.fetchone()
         cur.close()
         conn.close()
@@ -549,7 +553,8 @@ def _is_empty_result(value):
 
 
 def db_cached(ttl):
-    """Cache a function's result in Postgres. Errors and empty results are never cached."""
+    """Cache a function's result in Postgres. Errors and empty results are never cached;
+    if a refresh fails, the last good (expired) copy is served instead."""
     def deco(fn):
         @functools.wraps(fn)
         def wrapper(*args, **kwargs):
@@ -558,7 +563,14 @@ def db_cached(ttl):
             hit = _db_cache_get(key, ttl)
             if hit is not None:
                 return hit
-            result = fn(*args, **kwargs)
+            try:
+                result = fn(*args, **kwargs)
+            except Exception:
+                # Source is down or blocked: fall back to an expired copy if we have one
+                stale = _db_cache_get(key, ttl, allow_stale=True)
+                if stale is not None:
+                    return stale
+                raise
             if not _is_empty_result(result):
                 _db_cache_set(key, result)
             return result
