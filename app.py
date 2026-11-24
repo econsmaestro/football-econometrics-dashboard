@@ -1351,6 +1351,11 @@ if nav_page == "AI Scout":
                 "The AI service is temporarily unreachable — this is usually a brief network hiccup. "
                 "Please wait a moment and try again."
             )
+        if "resource_exhausted" in msg or "quota" in msg or "exhausted" in msg:
+            return (
+                "The AI has reached its daily free usage limit. It resets within about a day — "
+                "your message has not been counted against your weekly limit."
+            )
         if "429" in msg or "rate_limit" in msg or "rate limit" in msg or "too many requests" in msg:
             return (
                 "The AI service is very busy right now. Please wait a few seconds and try again — "
@@ -1435,10 +1440,11 @@ if nav_page == "AI Scout":
         if os.environ.get("GEMINI_API_KEY")
         else os.environ.get("AI_INTEGRATIONS_OPENAI_BASE_URL", "")
     )
-    _MODEL = (
-        "gemini-3.8-flash"
+    # Each Gemini model has its own free-tier daily quota, so try several in order.
+    _MODELS = (
+        [m.strip() for m in os.environ.get("GEMINI_MODELS", "gemini-3.8-flash,gemini-2.5-flash,gemini-2.5-flash-lite").split(",") if m.strip()]
         if os.environ.get("GEMINI_API_KEY")
-        else "gpt-4.1"
+        else ["gpt-4.1"]
     )
 
     if not _BASE_URL or not _API_KEY:
@@ -1446,6 +1452,11 @@ if nav_page == "AI Scout":
         st.stop()
 
     _client = openai.OpenAI(base_url=_BASE_URL, api_key=_API_KEY)
+
+    @st.cache_resource
+    def _exhausted_models():
+        return {}  # model name -> unix time when we may try it again
+    _EXHAUSTED = _exhausted_models()
 
     if "ai_scout_messages" not in st.session_state:
         st.session_state.ai_scout_messages = []
@@ -1842,36 +1853,49 @@ if nav_page == "AI Scout":
             # Step 3: call the AI (streamed so text appears as soon as it starts)
             def _stream_reply():
                 _last_exc = None
-                for _attempt in range(3):
-                    _got_text = False
-                    try:
-                        _stream = _client.chat.completions.create(
-                            model=_MODEL,
-                            messages=api_messages,
-                            max_completion_tokens=1024,
-                            stream=True,
-                        )
-                        for _chunk in _stream:
-                            if not _chunk.choices:
-                                continue
-                            _piece = _chunk.choices[0].delta.content
-                            if _piece:
-                                _got_text = True
-                                yield _piece
-                        if _got_text:
+                _now_ts = time.time()
+                for _model in _MODELS:
+                    # skip models that recently ran out of quota
+                    if _EXHAUSTED.get(_model, 0) > _now_ts:
+                        continue
+                    for _attempt in range(2):
+                        _got_text = False
+                        try:
+                            _stream = _client.chat.completions.create(
+                                model=_model,
+                                messages=api_messages,
+                                max_completion_tokens=1024,
+                                stream=True,
+                            )
+                            for _chunk in _stream:
+                                if not _chunk.choices:
+                                    continue
+                                _piece = _chunk.choices[0].delta.content
+                                if _piece:
+                                    _got_text = True
+                                    yield _piece
+                            if _got_text:
+                                return
+                            _last_exc = RuntimeError("empty response")
+                        except Exception as exc:
+                            if _got_text:
+                                return  # keep the partial answer
+                            _last_exc = exc
+                        print(f"[AI Scout] {_model} attempt {_attempt + 1} failed: {_last_exc!r}", flush=True)
+                        _m = str(_last_exc).lower()
+                        if "429" in _m or "resource_exhausted" in _m or "quota" in _m:
+                            _EXHAUSTED[_model] = time.time() + 3600  # try again in an hour
+                            break  # next model
+                        if "404" in _m or "not found" in _m or "not_found" in _m:
+                            _EXHAUSTED[_model] = time.time() + 3600
+                            break
+                        if any(k in _m for k in ("401", "403", "unauthorized", "forbidden")):
+                            _stream_reply.failed = _last_exc
+                            yield _friendly_ai_error(_last_exc)
                             return
-                        _last_exc = RuntimeError("empty response")
-                    except Exception as exc:
-                        if _got_text:
-                            return  # keep the partial answer
-                        _last_exc = exc
-                    print(f"[AI Scout] attempt {_attempt + 1} failed: {_last_exc!r}", flush=True)
-                    _m = str(_last_exc).lower()
-                    if any(k in _m for k in ("401", "403", "unauthorized", "forbidden")):
-                        break
-                    time.sleep(1.0 * (_attempt + 1))
-                _stream_reply.failed = _last_exc
-                yield _friendly_ai_error(_last_exc)
+                        time.sleep(1.0 * (_attempt + 1))
+                _stream_reply.failed = _last_exc or RuntimeError("429 all models exhausted")
+                yield _friendly_ai_error(_stream_reply.failed)
 
             _stream_reply.failed = None
             with st.spinner("Thinking…"):
