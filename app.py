@@ -1462,7 +1462,7 @@ if nav_page == "AI Scout":
         border-radius: 8px !important;
         color: white !important;
     }
-    /* Sticky controls row (clear + attach) stays just above chat input */
+    /* Controls row: sticky on desktop, fixed on mobile (keyboard shrinks viewport) */
     div[data-testid="stHorizontalBlock"]:has(div[data-testid="stFileUploader"]) {
         position: sticky !important;
         bottom: 76px !important;
@@ -1470,6 +1470,16 @@ if nav_page == "AI Scout":
         background: var(--background-color, #0e1117) !important;
         padding: 4px 0 !important;
         border-top: 1px solid rgba(255,255,255,0.08) !important;
+    }
+    @media (max-width: 768px) {
+        div[data-testid="stHorizontalBlock"]:has(div[data-testid="stFileUploader"]) {
+            position: fixed !important;
+            bottom: 76px !important;
+            left: 0 !important;
+            right: 0 !important;
+            padding: 4px 16px !important;
+            z-index: 200 !important;
+        }
     }
     /* Compact file uploader — hide drag-and-drop zone, keep Browse button */
     [data-testid="stFileUploaderDropzone"] {
