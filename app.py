@@ -1803,7 +1803,8 @@ if nav_page == "AI Scout":
                     _increment_scout_usage(_uid, _week_key)
                     _update_user_memory(_uid, user_input)
                 except Exception as exc:
-                    reply = _friendly_ai_error(exc)
+                    _raw = str(exc)
+                    reply = _friendly_ai_error(exc) + f"\n\n*(Debug: `{_raw[:300]}`)*"
             st.markdown(reply)
 
         st.session_state.ai_scout_messages.append({"role": "assistant", "content": reply})
