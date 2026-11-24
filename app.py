@@ -1466,6 +1466,26 @@ if nav_page == "AI Scout":
         border-radius: 8px !important;
         color: white !important;
     }
+    /* Controls bar pinned just above the chat input, always visible */
+    .st-key-scout_controls {
+        position: fixed !important;
+        bottom: 100px !important;
+        left: 0; right: 0;
+        z-index: 100 !important;
+        padding: 6px 1rem !important;
+        background: #0e1117 !important;
+        max-width: 736px;
+        margin: 0 auto;
+        max-height: 60vh;
+        overflow-y: auto;
+    }
+    /* keep clear button and attach side-by-side even on narrow phones */
+    .st-key-scout_controls [data-testid="stHorizontalBlock"] {
+        flex-wrap: nowrap !important;
+        gap: 0.5rem !important;
+    }
+    .st-key-scout_controls [data-testid="stColumn"] { min-width: 0 !important; }
+    .st-key-scout_controls [data-testid="stColumn"]:first-child { flex: 0 0 52px !important; width: 52px !important; }
     /* Disclaimer below chatbox */
     section[data-testid="stBottom"]::after {
         content: "⚠️  AI-generated content — always verify facts from official sources before trusting AI.";
@@ -1475,7 +1495,7 @@ if nav_page == "AI Scout":
         text-align: center;
         padding: 2px 16px 5px;
     }
-    .main .block-container { padding-bottom: 100px !important; }
+    .main .block-container { padding-bottom: 190px !important; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -1497,53 +1517,41 @@ if nav_page == "AI Scout":
             "Resets every **Sunday at 23:59 GMT**."
         )
 
-    # ── Attach / clear controls (top of page, above history) ─────────────────
-    # Image chips
+    # ── Attach / clear controls — fixed bar just above the chat input ─────────
     _remove_idx = None
-    if st.session_state.scout_images:
-        _outer_cols = st.columns(len(st.session_state.scout_images))
-        for _i, (_, _, _nm) in enumerate(st.session_state.scout_images):
-            _short = (_nm[:18] + "…") if len(_nm) > 18 else _nm
-            with _outer_cols[_i]:
-                _cc1, _cc2 = st.columns([0.84, 0.16])
-                with _cc1:
-                    st.markdown(
-                        f'<div style="background:#1a2035;border:1px solid rgba(30,136,229,0.4);'
-                        f'border-radius:20px;padding:4px 10px;font-size:0.75rem;color:#90CAF9;'
-                        f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'
-                        f'📷 <b>{_short}</b></div>',
-                        unsafe_allow_html=True,
-                    )
-                with _cc2:
-                    if st.button("✕", key=f"rm_img_{_i}_{st.session_state.scout_upload_key}",
-                                 help=f"Remove {_nm}"):
+    with st.container(key="scout_controls"):
+        _bc, _bu = st.columns([0.2, 0.8], vertical_alignment="center")
+        with _bc:
+            if st.button("🗑️", key="scout_clear", help="Clear chat history"):
+                st.session_state.ai_scout_messages = []
+                st.session_state.scout_images = []
+                st.session_state.scout_upload_key += 1
+                st.rerun()
+        with _bu:
+            _n_img = len(st.session_state.scout_images)
+            _lbl = f"📎 Attach image ({_n_img})" if _n_img else "📎 Attach image"
+            with st.expander(_lbl):
+                for _i, (_, _, _nm) in enumerate(st.session_state.scout_images):
+                    _c1, _c2 = st.columns([0.8, 0.2], vertical_alignment="center")
+                    _c1.caption(f"📷 {_nm}")
+                    if _c2.button("✕", key=f"rm_img_{_i}_{st.session_state.scout_upload_key}",
+                                  help=f"Remove {_nm}"):
                         _remove_idx = _i
+                _new_upload = st.file_uploader(
+                    "PNG, JPG or WEBP",
+                    type=["png", "jpg", "jpeg", "webp"],
+                    key=f"scout_img_{st.session_state.scout_upload_key}",
+                )
+                if _new_upload is not None:
+                    _new_upload.seek(0)
+                    _rb = _new_upload.read()
+                    st.session_state.scout_images.append((_rb, _new_upload.type or "image/png", _new_upload.name))
+                    st.session_state.scout_upload_key += 1
+                    st.rerun()
     if _remove_idx is not None:
         st.session_state.scout_images.pop(_remove_idx)
         st.session_state.scout_upload_key += 1
         st.rerun()
-
-    # 🗑️ Clear  |  📎 Attach — at top of page
-    _bc, _bu = st.columns([0.13, 0.87])
-    with _bc:
-        if st.button("🗑️", key="scout_clear", help="Clear chat history"):
-            st.session_state.ai_scout_messages = []
-            st.session_state.scout_images = []
-            st.session_state.scout_upload_key += 1
-            st.rerun()
-    with _bu:
-        _new_upload = st.file_uploader(
-            "📎 Attach image (PNG, JPG, WEBP)",
-            type=["png", "jpg", "jpeg", "webp"],
-            key=f"scout_img_{st.session_state.scout_upload_key}",
-        )
-        if _new_upload is not None:
-            _new_upload.seek(0)
-            _rb = _new_upload.read()
-            st.session_state.scout_images.append((_rb, _new_upload.type or "image/png", _new_upload.name))
-            st.session_state.scout_upload_key += 1
-            st.rerun()
-
 
     # ── Message history ───────────────────────────────────────────────────────
     for msg in st.session_state.ai_scout_messages:
