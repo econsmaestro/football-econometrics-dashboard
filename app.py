@@ -469,6 +469,116 @@ def init_db():
 init_db()
 
 
+# ── Persistent (Postgres) cache layer ────────────────────────────────────────
+# st.cache_data lives in memory and is lost on restart / scale-to-zero. This
+# keeps scraped results in the database so every user (and every restart) can
+# reuse them instead of re-scraping.
+import hashlib
+import pickle
+import functools
+
+_DB_CACHE_READY = False
+
+
+def _db_cache_init():
+    global _DB_CACHE_READY
+    if _DB_CACHE_READY:
+        return
+    conn = get_db_conn()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS data_cache (
+            cache_key VARCHAR(64) PRIMARY KEY,
+            value BYTEA NOT NULL,
+            created_at TIMESTAMP DEFAULT NOW()
+        )
+        """
+    )
+    conn.commit()
+    cur.close()
+    conn.close()
+    _DB_CACHE_READY = True
+
+
+def _db_cache_get(key, ttl, allow_stale=False):
+    """Return the cached value, or None. With allow_stale, ignore the TTL."""
+    try:
+        _db_cache_init()
+        conn = get_db_conn()
+        cur = conn.cursor()
+        if allow_stale:
+            cur.execute("SELECT value FROM data_cache WHERE cache_key = %s", (key,))
+        else:
+            cur.execute(
+                "SELECT value FROM data_cache WHERE cache_key = %s "
+                "AND created_at > NOW() - make_interval(secs => %s)",
+                (key, ttl),
+            )
+        row = cur.fetchone()
+        cur.close()
+        conn.close()
+        return pickle.loads(bytes(row[0])) if row else None
+    except Exception:
+        return None
+
+
+def _db_cache_set(key, value):
+    try:
+        _db_cache_init()
+        conn = get_db_conn()
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO data_cache (cache_key, value, created_at) VALUES (%s, %s, NOW()) "
+            "ON CONFLICT (cache_key) DO UPDATE SET value = EXCLUDED.value, created_at = NOW()",
+            (key, psycopg2.Binary(pickle.dumps(value))),
+        )
+        conn.commit()
+        cur.close()
+        conn.close()
+    except Exception:
+        pass
+
+
+def _is_empty_result(value):
+    if value is None:
+        return True
+    if isinstance(value, pd.DataFrame):
+        return value.empty
+    if isinstance(value, (list, dict, str)):
+        return len(value) == 0
+    if isinstance(value, tuple):
+        return len(value) == 0 or all(_is_empty_result(v) for v in value)
+    return False
+
+
+def db_cached(ttl):
+    """Cache a function's result in Postgres. Errors and empty results are never cached;
+    if a refresh fails, the last good (expired) copy is served instead."""
+    def deco(fn):
+        @functools.wraps(fn)
+        def wrapper(*args, **kwargs):
+            raw = f"{fn.__module__}.{fn.__qualname__}|{args!r}|{sorted(kwargs.items())!r}"
+            key = hashlib.sha256(raw.encode()).hexdigest()
+            hit = _db_cache_get(key, ttl)
+            if hit is not None:
+                return hit
+            try:
+                result = fn(*args, **kwargs)
+            except Exception:
+                # Source is down or blocked: fall back to an expired copy if we have one
+                stale = _db_cache_get(key, ttl, allow_stale=True)
+                if stale is not None:
+                    return stale
+                raise
+            if not _is_empty_result(result):
+                _db_cache_set(key, result)
+            return result
+        return wrapper
+    return deco
+
+
+
 def record_visit(session_id, page_name):
     try:
         conn = get_db_conn()
@@ -2003,6 +2113,7 @@ def _requests_get_with_retry(url, headers, timeout=30, retries=3, backoff=2.0):
 
 
 @st.cache_data(ttl=604800, show_spinner=False)
+@db_cached(ttl=604800)
 def fetch_season_data(season_val, wiki_pattern, wiki_name, season_type):
     if wiki_pattern is None or wiki_name is None:
         raise ValueError("League tables are not available for this competition.")
@@ -2101,6 +2212,7 @@ def load_multi_season(start_year, end_year, wiki_pattern, wiki_name, season_type
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
+@db_cached(ttl=3600)
 def load_cross_league_comparison():
     leagues_with_wiki = {
         name: cfg for name, cfg in LEAGUE_CONFIG.items()
@@ -2231,6 +2343,7 @@ def rebase_to_standard_season(df, games_per_season):
 
 
 @st.cache_data(ttl=604800, show_spinner=False)
+@db_cached(ttl=604800)
 def scrape_penalty_takers(tm_slug, tm_code, season_id=None, is_cup=False):
     wb = "pokalwettbewerb" if is_cup else "wettbewerb"
     base_url = f"https://www.transfermarkt.us/{tm_slug}/elfmeterschuetzen/{wb}/{tm_code}/plus/1"
@@ -2281,6 +2394,7 @@ def scrape_penalty_takers(tm_slug, tm_code, season_id=None, is_cup=False):
 
 
 @st.cache_data(ttl=604800, show_spinner=False)
+@db_cached(ttl=604800)
 def scrape_penalty_goalkeepers(tm_slug, tm_code, season_id=None, is_cup=False):
     wb = "pokalwettbewerb" if is_cup else "wettbewerb"
     base_url = f"https://www.transfermarkt.us/{tm_slug}/elfmetertoeter/{wb}/{tm_code}/plus/1"
@@ -2414,6 +2528,7 @@ def _parse_scorers_page(soup):
 
 
 @st.cache_data(ttl=604800, show_spinner=False)
+@db_cached(ttl=604800)
 def scrape_top_scorers(tm_slug, tm_code, season_id, is_cup=False):
     wb = "pokalwettbewerb" if is_cup else "wettbewerb"
     base_url = f"https://www.transfermarkt.us/{tm_slug}/torschuetzenliste/{wb}/{tm_code}/saison_id/{season_id}/altersklasse/alle/detailpos//plus/1"
@@ -2506,6 +2621,7 @@ def _parse_assists_page(soup):
 
 
 @st.cache_data(ttl=604800, show_spinner=False)
+@db_cached(ttl=604800)
 def scrape_top_assists(tm_slug, tm_code, season_id, is_cup=False):
     wb = "pokalwettbewerb" if is_cup else "wettbewerb"
     base_url = f"https://www.transfermarkt.us/{tm_slug}/assistliste/{wb}/{tm_code}/saison_id/{season_id}/plus/1"
@@ -2698,6 +2814,7 @@ def load_alltime_gk_penalties(tm_slug, tm_code, start_year, season_type, is_cup=
 
 
 @st.cache_data(ttl=604800, show_spinner=False)
+@db_cached(ttl=604800)
 def search_player_transfermarkt(query):
     url = f"https://www.transfermarkt.us/schnellsuche/ergebnis/schnellsuche?query={quote(query)}"
     headers = {
@@ -2730,6 +2847,7 @@ def search_player_transfermarkt(query):
 
 
 @st.cache_data(ttl=604800, show_spinner=False)
+@db_cached(ttl=604800)
 def scrape_player_career_penalties(player_slug, player_id):
     url = f"https://www.transfermarkt.us/{player_slug}/elfmetertore/spieler/{player_id}/saison_id//wettbewerb_id//plus/1"
     headers = {
